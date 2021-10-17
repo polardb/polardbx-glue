@@ -1,4 +1,7 @@
 
+[![LICENSE](https://img.shields.io/badge/License-Apache%202.0-green.svg)](https://github.com/ApsaraDB/galaxysql/blob/main/LICENSE)
+[![Language](https://img.shields.io/badge/Language-Java-blue.svg)](https://www.java.com/)
+
 [中文文档](docs/zh_CN/README.md)
 
 ## What is ApsaraDB GalaxyGlue ?
