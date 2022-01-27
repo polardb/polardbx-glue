@@ -146,7 +146,8 @@ public class XClient implements AutoCloseable {
 
                     final long sessionId = msg.getSid();
 
-                    if (0 == sessionId || (XConfig.GALAXY_X_PROTOCOL && ClientState.Authing == state)) {
+                    if (0 == sessionId ||
+                        (XConfig.GALAXY_X_PROTOCOL && ClientState.Authing == state && 1 == sessionId)) {
                         if (logEnabled) {
                             logPacket(msg, false, false);
                         }
@@ -429,34 +430,18 @@ public class XClient implements AutoCloseable {
             // Close it anyway.
             freed.close();
         }
-        if (XConfig.GALAXY_X_PROTOCOL) {
-            setFatalError(new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_CLIENT,
-                this + " TCP not reusable in galaxy."));
-            pool.deleteClientFromContainer(this);
-        }
     }
 
     public XSession newXSession(AtomicLong sessionIdGenerator, boolean autoCommit) {
-        if (XConfig.GALAXY_X_PROTOCOL) {
-            if (!workingSessionMap.isEmpty()) {
-                throw new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_CLIENT,
-                    this + " only one session allowed in galaxy.");
-            }
-        }
-
         final XSession session;
-        if (XConfig.GALAXY_X_PROTOCOL) {
-            session = new XSession(this, 1, XSession.Status.Ready);
-        } else {
-            session = new XSession(
-                this,
-                sessionIdGenerator.getAndIncrement() | (
-                    autoCommit && XConnectionManager.getInstance().isEnableAutoCommitOptimize() ?
-                        0x8000_0000_0000_0000L : 0),
+        session = new XSession(
+            this,
+            sessionIdGenerator.getAndIncrement() | (
                 autoCommit && XConnectionManager.getInstance().isEnableAutoCommitOptimize() ?
-                    XSession.Status.AutoCommit :
-                    XSession.Status.Init);
-        }
+                    0x8000_0000_0000_0000L : 0),
+            autoCommit && XConnectionManager.getInstance().isEnableAutoCommitOptimize() ?
+                XSession.Status.AutoCommit :
+                XSession.Status.Init);
 
         // Got good session.
         try {
@@ -468,6 +453,7 @@ public class XClient implements AutoCloseable {
             perfCollection.getSessionCreateCount().getAndIncrement();
             pool.getPerfCollection().getSessionCreateCount().getAndIncrement();
             assert null == previous;
+            XLog.XLogLogger.info("New session: " + session);
             return session;
         } catch (Throwable e) {
             final XSession removed = workingSessionMap.remove(session.getSessionId());
@@ -565,38 +551,6 @@ public class XClient implements AutoCloseable {
         send(packet, true);
     }
 
-    public void initWithConnection(XConnection connection, long timeoutNanos) throws Exception {
-        Map<String, Object> variables = new HashMap<>();
-        connection.init();
-        connection.setNetworkTimeoutNanos(timeoutNanos);
-        try (XResult result = connection.execQuery("show variables")) {
-            while (result.next() != null) {
-                String key = (String) XResultUtil.resultToObject(
-                    result.getMetaData().get(0), result.current().getRow().get(0), true,
-                    TimeZone.getDefault()).getKey(); // Ignore time zone.
-                Pair<Object, byte[]> val = XResultUtil.resultToObject(
-                    result.getMetaData().get(1), result.current().getRow().get(1), true,
-                    TimeZone.getDefault()); // Ignore time zone.
-                variables.put(key.toLowerCase(), val.getKey());
-            }
-            sessionVariablesL = Collections.unmodifiableMap(variables);
-        }
-
-        variables.clear();
-        try (XResult result = connection.execQuery("show global variables")) {
-            while (result.next() != null) {
-                String key = (String) XResultUtil.resultToObject(
-                    result.getMetaData().get(0), result.current().getRow().get(0), true,
-                    TimeZone.getDefault()).getKey(); // Ignore time zone.
-                Pair<Object, byte[]> val = XResultUtil.resultToObject(
-                    result.getMetaData().get(1), result.current().getRow().get(1), true,
-                    TimeZone.getDefault()); // Ignore time zone.
-                variables.put(key.toLowerCase(), val.getKey());
-            }
-            globalVariablesL = Collections.unmodifiableMap(variables);
-        }
-    }
-
     public void refreshVariables(AtomicLong sessionIdGenerator, long timeoutNanos) throws Exception {
         if (sessionVariablesL != null && globalVariablesL != null &&
             System.nanoTime() - lastVariablesNanos
@@ -610,11 +564,6 @@ public class XClient implements AutoCloseable {
                 ThreadLocalRandom.current().nextLong(XConnectionManager.getInstance().getSessionAgingNanos());
         } else {
             lastVariablesNanos = System.nanoTime(); // Fixed gap is ok.
-        }
-
-        // Get session variable.
-        if (XConfig.GALAXY_X_PROTOCOL) {
-            return;
         }
 
         Map<String, Object> variables = new HashMap<>();
@@ -678,6 +627,8 @@ public class XClient implements AutoCloseable {
         state = ClientState.LoadVariables;
         refreshVariables(sessionIdGenerator, timeoutNanos);
         state = ClientState.Ready;
+
+        XLog.XLogLogger.info("New client: " + this);
     }
 
     // Global variables(key with lower case).
@@ -796,9 +747,6 @@ public class XClient implements AutoCloseable {
     }
 
     public boolean probe(AtomicLong sessionIdGenerator, long timeoutNanos) {
-        if (XConfig.GALAXY_X_PROTOCOL) {
-            return !isBad() && nioClient.isValid();
-        }
         try (XConnection connection = newXConnection(sessionIdGenerator,
             XConnectionManager.getInstance().isEnableAutoCommitOptimize())) {
             connection.init();

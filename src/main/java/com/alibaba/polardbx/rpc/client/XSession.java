@@ -1736,19 +1736,27 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
         final XResult result;
         try {
             final long startNanos = System.nanoTime();
-            final boolean postOp = send_internal(connection, packet, false);
-            addActive();
-            result = lastUserRequest = lastRequest = new XResult(connection, packetQueue, lastRequest,
-                startNanos, startNanos + connection.actualTimeoutNanos(),
-                startNanos + XConfig.DEFAULT_TOTAL_TIMEOUT_NANOS,
-                false, XResult.RequestType.FETCH_TSO, GET_TSO_SQL, connection.getDefaultTokenCount(), null, null);
-            if (postOp) {
+            // Caused by special optimize of get TSO(execute on receive thread).
+            // We should finish pipeline first.
+            if (XConfig.GALAXY_X_PROTOCOL && lastIgnore) {
+                // Need add close expect message.
+                client.send(new XPacket(sessionId, Polarx.ClientMessages.Type.EXPECT_CLOSE_VALUE,
+                    PolarxExpect.Close.newBuilder().build()), true);
+                lastIgnore = false;
                 lastRequest = new XResult(connection, packetQueue, lastRequest,
                     startNanos, startNanos + connection.actualTimeoutNanos(),
                     startNanos + XConfig.DEFAULT_TOTAL_TIMEOUT_NANOS,
                     true, XResult.RequestType.EXPECTATIONS, "expect_close",
                     connection.getDefaultTokenCount(), null, null);
+                lastRequest.finishBlockMode();
             }
+            // Then normal TSO request.
+            client.send(packet, true);
+            addActive();
+            result = lastUserRequest = lastRequest = new XResult(connection, packetQueue, lastRequest,
+                startNanos, startNanos + connection.actualTimeoutNanos(),
+                startNanos + XConfig.DEFAULT_TOTAL_TIMEOUT_NANOS,
+                false, XResult.RequestType.FETCH_TSO, GET_TSO_SQL, connection.getDefaultTokenCount(), null, null);
         } catch (Throwable t) {
             lastException = t; // This exception should drop the connection.
             throw t;

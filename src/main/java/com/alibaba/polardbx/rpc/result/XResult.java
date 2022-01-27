@@ -747,8 +747,7 @@ public class XResult implements AutoCloseable {
                         ++fetchCount;
                         --tokenCount;
                         final long tokenLow = XConnectionManager.getInstance().getDefaultQueryToken() / 5;
-                        if (!XConfig.GALAXY_X_PROTOCOL &&
-                            allowPrefetchToken && tokenCount < tokenLow && pipe.count() < tokenLow) {
+                        if (allowPrefetchToken && tokenCount < tokenLow && pipe.count() < tokenLow) {
                             connection.tokenOffer();
                             tokenCount = connection.getDefaultTokenCount();
                         }
@@ -761,8 +760,7 @@ public class XResult implements AutoCloseable {
                         tokenCount -= chunk.getRowCount();
                         // May multi chunk for columns more than 10, but we don't care. Because we also count the pipe depth.
                         final long tokenLow = XConnectionManager.getInstance().getDefaultQueryToken() / 5;
-                        if (!XConfig.GALAXY_X_PROTOCOL &&
-                            allowPrefetchToken && tokenCount < tokenLow && pipe.count() < tokenLow) {
+                        if (allowPrefetchToken && tokenCount < tokenLow && pipe.count() < tokenLow) {
                             connection.tokenOffer();
                             tokenCount = connection.getDefaultTokenCount();
                             ++activeOfferTokenCount;
@@ -858,6 +856,13 @@ public class XResult implements AutoCloseable {
                 // General error.
                 if (Polarx.ServerMessages.Type.ERROR_VALUE == packet.getType()) {
                     final Polarx.Error error = (Polarx.Error) packet.getPacket();
+                    // Bypass the expect error on expect_close.
+                    if (XConfig.GALAXY_X_PROTOCOL && requestType == RequestType.EXPECTATIONS && 5159 == error.getCode()
+                        && sql.equals("expect_close")) {
+                        status = ResultStatus.XResultFinish;
+                        finishNanos = gotPktNanos - startNanos;
+                        return null;
+                    }
                     // Ignorable request must success.
                     if (error.getSeverity() == Polarx.Error.Severity.ERROR && (!ignoreResult || !isFatalOnIgnorable)) {
                         // Cache miss?

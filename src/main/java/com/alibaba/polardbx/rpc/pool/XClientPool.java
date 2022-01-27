@@ -263,8 +263,7 @@ public class XClientPool {
         throws Exception {
         final long concurrent = perfCollection.getSessionActiveCount().get();
         final long wait = perfCollection.getGetConnectionCount().get();
-        final long waitThresh =
-            XConfig.GALAXY_X_PROTOCOL ? 512 : DynamicConfig.getInstance().getXprotoMaxDnWaitConnection();
+        final long waitThresh = DynamicConfig.getInstance().getXprotoMaxDnWaitConnection();
         if (concurrent > DynamicConfig.getInstance().getXprotoMaxDnConcurrent() ||
             wait > waitThresh) {
             throw new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_CLIENT,
@@ -420,7 +419,6 @@ public class XClientPool {
                     initTimeoutNanos = XConfig.MIN_INIT_TIMEOUT_NANOS;
                 }
                 newClient.initClient(manager.getIdGenerator(), initTimeoutNanos);
-                newClient.initWithConnection(newConnection, initTimeoutNanos);
             } catch (Exception e) {
                 // Connection fail.
                 try {
@@ -467,18 +465,6 @@ public class XClientPool {
         }
         client.setFatalError(new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_CLIENT, msg));
         client.close();
-    }
-
-    public void deleteClientFromContainer(XClient client) {
-        if (XConfig.GALAXY_X_PROTOCOL) {
-            // Only galaxy protocol need this to clean container to make room for new client faster.
-            synchronized (clients) {
-                clients.remove(client);
-            }
-            synchronized (agingClients) {
-                agingClients.remove(client);
-            }
-        }
     }
 
     public void cleanupClient(ThreadPoolExecutor executor) {

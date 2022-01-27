@@ -352,6 +352,8 @@ public class NIOClient implements NIOConnection {
                 }
 
                 if (recvBuffer.remaining() >= XPacket.HEADER_SIZE + packetSize) {
+//                    final int start = recvBuffer.position();
+
                     final long sid = recvBuffer.getLong();
                     if (XConfig.GALAXY_X_PROTOCOL) {
                         final long version = recvBuffer.get();
@@ -366,6 +368,20 @@ public class NIOClient implements NIOConnection {
                     final int nextPos = recvBuffer.position() + packetSize;
                     final int oldLimit = recvBuffer.limit();
                     recvBuffer.limit(nextPos);
+
+                    // Calc the CRC32(packet level debug code).
+//                    final long crc_val;
+//                    {
+//                        final CRC32 crc32 = new CRC32();
+//                        final int old = recvBuffer.position();
+//                        recvBuffer.position(start);
+//                        crc32.update(recvBuffer);
+//                        crc_val = crc32.getValue();
+//                        XLog.XLogLogger.info(
+//                            "recv: msg type:" + type + " sid:" + sid + " len:" + (packetSize + 1) + " crc:"
+//                                + crc_val);
+//                        recvBuffer.position(old);
+//                    }
 
                     // Decode packet.
                     try {

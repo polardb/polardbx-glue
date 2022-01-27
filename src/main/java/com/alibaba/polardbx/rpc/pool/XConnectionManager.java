@@ -89,7 +89,8 @@ public class XConnectionManager {
         new NamedThreadFactory("XConnection-Check-Scheduler"),
         new ThreadPoolExecutor.CallerRunsPolicy());
 
-    private final AtomicLong idGenerator = new AtomicLong(1); // id 0 is reserved for auth.
+    // id 0 is reserved for auth. id 1 is reserved for legacy galaxy.
+    private final AtomicLong idGenerator = new AtomicLong(2);
 
     private XConnectionManager(int maxClientPerInstance, int maxSessionPerClient, int maxPooledSessionPerInstance) {
         this.maxClientPerInstance = maxClientPerInstance;
@@ -191,9 +192,6 @@ public class XConnectionManager {
     }
 
     public int getMaxSessionPerClient() {
-        if (XConfig.GALAXY_X_PROTOCOL) {
-            return 1;
-        }
         return maxSessionPerClient;
     }
 
@@ -250,9 +248,6 @@ public class XConnectionManager {
     }
 
     public boolean isEnableAutoCommitOptimize() {
-        if (XConfig.GALAXY_X_PROTOCOL) {
-            return false;
-        }
         return enableAutoCommitOptimize;
     }
 
