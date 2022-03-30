@@ -17,6 +17,7 @@
 package com.alibaba.polardbx.rpc.compatible;
 
 import com.alibaba.polardbx.common.exception.NotSupportException;
+import com.alibaba.polardbx.common.exception.TddlNestableRuntimeException;
 import com.alibaba.polardbx.common.utils.Pair;
 import com.alibaba.polardbx.rpc.XConfig;
 import com.alibaba.polardbx.rpc.XUtil;
@@ -401,24 +402,53 @@ public class XPreparedStatement extends XStatement implements PreparedStatement 
     public int[] executeBatch() throws SQLException {
         final XResult[] results = new XResult[batch.size()];
         final int[] affected = new int[batch.size()];
-        int prev_done = 0;
-        for (int i = 0; i < batch.size(); ++i) {
-            final PolarxDatatypes.Any[] paramPair = batch.get(i);
-            // Only block and wait result on last query.
-            final Pair<String, List<PolarxDatatypes.Any>> newParam = reorganizeParam(paramPair);
-            if (XConfig.GALAXY_X_PROTOCOL) {
-                // Pipeline not supported now.
-                results[i] = connection.execUpdate(newParam.getKey(), newParam.getValue(), false);
-            } else {
-                results[i] = connection.execUpdate(newParam.getKey(), newParam.getValue(), i != batch.size() - 1);
-                results[i].setFatalOnIgnorable(false); // Set not fatal on previous execution(special ignorable).
-                if (i - prev_done > XConfig.MAX_QUEUED_BATCH_REQUEST) {
-                    prev_done = i;
-                    connection.flushNetwork();
-                    while (results[i].next() != null) {
-                        // Consume all.
+        boolean finishExecute = false;
+        try {
+            int prev_done = 0;
+            for (int i = 0; i < batch.size(); ++i) {
+                final PolarxDatatypes.Any[] paramPair = batch.get(i);
+                // Only block and wait result on last query.
+                final Pair<String, List<PolarxDatatypes.Any>> newParam = reorganizeParam(paramPair);
+                if (XConfig.GALAXY_X_PROTOCOL) {
+                    // Pipeline not supported now.
+                    results[i] = connection.execUpdate(newParam.getKey(), newParam.getValue(), false);
+                } else {
+                    if (i == batch.size() - 1) {
+                        finishExecute = true; // When invoke next execUpdate, all batch execute finished.
+                    }
+                    results[i] = connection.execUpdate(newParam.getKey(), newParam.getValue(), !finishExecute);
+                    results[i].setFatalOnIgnorable(false); // Set not fatal on previous execution(special ignorable).
+                    if (!finishExecute && i - prev_done > XConfig.MAX_QUEUED_BATCH_REQUEST) {
+                        prev_done = i;
+                        connection.flushNetwork();
+                        try {
+                            while (results[i].next() != null) {
+                                // Consume all.
+                            }
+                        } catch (Throwable t) {
+                            // Still ignorable. We should finish this with one non-ignorable request.
+                            try {
+                                connection.execUpdate("select 'executeBatch abort'");
+                            } catch (Throwable ignore) {
+                            }
+                            finishExecute = true;
+                            throw t;
+                        }
                     }
                 }
+            }
+        } catch (SQLException e) {
+            // Fail this session when any unfinished exception occurs.
+            if (!finishExecute) {
+                connection.setLastException(e);
+            }
+            throw e;
+        } catch (Throwable t) {
+            // Fail this session when any unfinished exception occurs.
+            if (finishExecute) {
+                throw t;
+            } else {
+                throw new TddlNestableRuntimeException(connection.setLastException(t));
             }
         }
         for (int i = 0; i < batch.size(); ++i) {

@@ -17,6 +17,7 @@
 package com.alibaba.polardbx.rpc.compatible;
 
 import com.alibaba.polardbx.common.exception.NotSupportException;
+import com.alibaba.polardbx.common.exception.TddlNestableRuntimeException;
 import com.alibaba.polardbx.rpc.XConfig;
 import com.alibaba.polardbx.rpc.pool.XConnection;
 import com.alibaba.polardbx.rpc.result.XResult;
@@ -231,22 +232,51 @@ public class XStatement implements Statement {
         final XResult[] results = new XResult[batchSql.size()];
         final int[] affecteds = new int[batchSql.size()];
         // First queued and then run.
-        int prev_done = 0;
-        for (int i = 0; i < batchSql.size(); ++i) {
-            // Only block and wait result on last query.
-            if (XConfig.GALAXY_X_PROTOCOL) {
-                // Pipeline not supported now.
-                results[i] = connection.execUpdate(batchSql.get(i), null, false);
-            } else {
-                results[i] = connection.execUpdate(batchSql.get(i), null, i != batchSql.size() - 1);
-                results[i].setFatalOnIgnorable(false); // Set not fatal on previous execution(special ignorable).
-                if (i - prev_done > XConfig.MAX_QUEUED_BATCH_REQUEST) {
-                    prev_done = i;
-                    connection.flushNetwork();
-                    while (results[i].next() != null) {
-                        // Consume all.
+        boolean finishExecute = false;
+        try {
+            int prev_done = 0;
+            for (int i = 0; i < batchSql.size(); ++i) {
+                // Only block and wait result on last query.
+                if (XConfig.GALAXY_X_PROTOCOL) {
+                    // Pipeline not supported now.
+                    results[i] = connection.execUpdate(batchSql.get(i), null, false);
+                } else {
+                    if (i == batchSql.size() - 1) {
+                        finishExecute = true; // When invoke next execUpdate, all batch execute finished.
+                    }
+                    results[i] = connection.execUpdate(batchSql.get(i), null, !finishExecute);
+                    results[i].setFatalOnIgnorable(false); // Set not fatal on previous execution(special ignorable).
+                    if (!finishExecute && i - prev_done > XConfig.MAX_QUEUED_BATCH_REQUEST) {
+                        prev_done = i;
+                        connection.flushNetwork();
+                        try {
+                            while (results[i].next() != null) {
+                                // Consume all.
+                            }
+                        } catch (Throwable t) {
+                            // Still ignorable. We should finish this with one non-ignorable request.
+                            try {
+                                connection.execUpdate("select 'executeBatch abort'");
+                            } catch (Throwable ignore) {
+                            }
+                            finishExecute = true;
+                            throw t;
+                        }
                     }
                 }
+            }
+        } catch (SQLException e) {
+            // Fail this session when any unfinished exception occurs.
+            if (!finishExecute) {
+                connection.setLastException(e);
+            }
+            throw e;
+        } catch (Throwable t) {
+            // Fail this session when any unfinished exception occurs.
+            if (finishExecute) {
+                throw t;
+            } else {
+                throw new TddlNestableRuntimeException(connection.setLastException(t));
             }
         }
         for (int i = 0; i < batchSql.size(); ++i) {

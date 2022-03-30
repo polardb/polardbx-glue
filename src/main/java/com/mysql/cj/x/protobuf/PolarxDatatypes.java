@@ -433,19 +433,23 @@ public final class PolarxDatatypes {
        * <code>V_PLACEHOLDER = 9;</code>
        */
       V_PLACEHOLDER(9),
-        /**
-         * <pre>
-         * 用于表示表名，库名，列名等
-         * </pre>
-         *
-         * <code>V_IDENTIFIER = 10;</code>
-         */
-        V_IDENTIFIER(10),
-        /**
-         * <code>V_IDENTIFIER_GALAXY = 21;</code>
-         */
-        V_IDENTIFIER_GALAXY(21),
-        ;
+      /**
+       * <pre>
+       * 用于表示表名，库名，列名等
+       * </pre>
+       *
+       * <code>V_IDENTIFIER = 10;</code>
+       */
+      V_IDENTIFIER(10),
+      /**
+       * <code>V_RAW_STRING = 11;</code>
+       */
+      V_RAW_STRING(11),
+      /**
+       * <code>V_IDENTIFIER_GALAXY = 21;</code>
+       */
+      V_IDENTIFIER_GALAXY(21),
+      ;
 
         /**
          * <code>V_SINT = 1;</code>
@@ -479,26 +483,30 @@ public final class PolarxDatatypes {
        * <code>V_STRING = 8;</code>
        */
       public static final int V_STRING_VALUE = 8;
-        /**
-         * <pre>
-         * 绑定动态参数
-         * </pre>
-         *
-         * <code>V_PLACEHOLDER = 9;</code>
-         */
-        public static final int V_PLACEHOLDER_VALUE = 9;
-        /**
-         * <pre>
-         * 用于表示表名，库名，列名等
-         * </pre>
-         *
-         * <code>V_IDENTIFIER = 10;</code>
-         */
-        public static final int V_IDENTIFIER_VALUE = 10;
-        /**
-         * <code>V_IDENTIFIER_GALAXY = 21;</code>
-         */
-        public static final int V_IDENTIFIER_GALAXY_VALUE = 21;
+      /**
+       * <pre>
+       * 绑定动态参数
+       * </pre>
+       *
+       * <code>V_PLACEHOLDER = 9;</code>
+       */
+      public static final int V_PLACEHOLDER_VALUE = 9;
+      /**
+       * <pre>
+       * 用于表示表名，库名，列名等
+       * </pre>
+       *
+       * <code>V_IDENTIFIER = 10;</code>
+       */
+      public static final int V_IDENTIFIER_VALUE = 10;
+      /**
+       * <code>V_RAW_STRING = 11;</code>
+       */
+      public static final int V_RAW_STRING_VALUE = 11;
+      /**
+       * <code>V_IDENTIFIER_GALAXY = 21;</code>
+       */
+      public static final int V_IDENTIFIER_GALAXY_VALUE = 21;
 
         public final int getNumber() {
             return value;
@@ -536,6 +544,7 @@ public final class PolarxDatatypes {
           case 8: return V_STRING;
           case 9: return V_PLACEHOLDER;
           case 10: return V_IDENTIFIER;
+          case 11: return V_RAW_STRING;
           case 21: return V_IDENTIFIER_GALAXY;
           default: return null;
         }
@@ -8285,54 +8294,53 @@ public final class PolarxDatatypes {
     com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
         internal_static_Polarx_Datatypes_SessionVariable_fieldAccessorTable;
 
-    public static com.google.protobuf.Descriptors.FileDescriptor
-    getDescriptor() {
-        return descriptor;
-    }
-
-    private static final com.google.protobuf.Descriptors.FileDescriptor
-        descriptor;
-
-    static {
-        java.lang.String[] descriptorData = {
-            "\n\026polarx_datatypes.proto\022\020Polarx.Datatyp" +
-                "es\"\216\005\n\006Scalar\022+\n\004type\030\001 \002(\0162\035.Polarx.Dat" +
-                "atypes.Scalar.Type\022\024\n\014v_signed_int\030\002 \001(\022" +
-                "\022\026\n\016v_unsigned_int\030\003 \001(\004\0221\n\010v_octets\030\005 \001" +
-                "(\0132\037.Polarx.Datatypes.Scalar.Octets\022\020\n\010v" +
-                "_double\030\006 \001(\001\022\017\n\007v_float\030\007 \001(\002\022\016\n\006v_bool" +
-                "\030\010 \001(\010\0221\n\010v_string\030\t \001(\0132\037.Polarx.Dataty" +
-                "pes.Scalar.String\022\022\n\nv_position\030\n \001(\r\0225\n" +
-                "\014v_identifier\030\013 \001(\0132\037.Polarx.Datatypes.S" +
-                "calar.String\022<\n\023v_identifier_galaxy\030\025 \001(" +
-                "\0132\037.Polarx.Datatypes.Scalar.String\032*\n\006St" +
-                "ring\022\r\n\005value\030\001 \002(\014\022\021\n\tcollation\030\002 \001(\004\032-" +
-                "\n\006Octets\022\r\n\005value\030\001 \002(\014\022\024\n\014content_type\030" +
-                "\002 \001(\r\"\253\001\n\004Type\022\n\n\006V_SINT\020\001\022\n\n\006V_UINT\020\002\022\n" +
-                "\n\006V_NULL\020\003\022\014\n\010V_OCTETS\020\004\022\014\n\010V_DOUBLE\020\005\022\013" +
-                "\n\007V_FLOAT\020\006\022\n\n\006V_BOOL\020\007\022\014\n\010V_STRING\020\010\022\021\n" +
-                "\rV_PLACEHOLDER\020\t\022\020\n\014V_IDENTIFIER\020\n\022\027\n\023V_" +
-                "IDENTIFIER_GALAXY\020\025\"}\n\006Object\0221\n\003fld\030\001 \003" +
-                "(\0132$.Polarx.Datatypes.Object.ObjectField" +
-                "\032@\n\013ObjectField\022\013\n\003key\030\001 \002(\t\022$\n\005value\030\002 " +
-                "\002(\0132\025.Polarx.Datatypes.Any\"-\n\005Array\022$\n\005v" +
-                "alue\030\001 \003(\0132\025.Polarx.Datatypes.Any\"\323\001\n\003An" +
-                "y\022(\n\004type\030\001 \002(\0162\032.Polarx.Datatypes.Any.T" +
-                "ype\022(\n\006scalar\030\002 \001(\0132\030.Polarx.Datatypes.S" +
-      "calar\022%\n\003obj\030\003 \001(\0132\030.Polarx.Datatypes.Ob" +
-      "ject\022&\n\005array\030\004 \001(\0132\027.Polarx.Datatypes.A" +
-      "rray\")\n\004Type\022\n\n\006SCALAR\020\001\022\n\n\006OBJECT\020\002\022\t\n\005" +
-                "ARRAY\020\003\"G\n\017SessionVariable\022\013\n\003key\030\001 \002(\t\022" +
-                "'\n\005value\030\002 \002(\0132\030.Polarx.Datatypes.Scalar" +
-                "B\031\n\027com.mysql.cj.x.protobuf"
-        };
-        descriptor = com.google.protobuf.Descriptors.FileDescriptor
-            .internalBuildGeneratedFileFrom(descriptorData,
-                new com.google.protobuf.Descriptors.FileDescriptor[] {
-                });
-        internal_static_Polarx_Datatypes_Scalar_descriptor =
-            getDescriptor().getMessageTypes().get(0);
-        internal_static_Polarx_Datatypes_Scalar_fieldAccessorTable = new
+  public static com.google.protobuf.Descriptors.FileDescriptor
+      getDescriptor() {
+    return descriptor;
+  }
+  private static  com.google.protobuf.Descriptors.FileDescriptor
+      descriptor;
+  static {
+    java.lang.String[] descriptorData = {
+      "\n\026polarx_datatypes.proto\022\020Polarx.Datatyp" +
+      "es\"\240\005\n\006Scalar\022+\n\004type\030\001 \002(\0162\035.Polarx.Dat" +
+      "atypes.Scalar.Type\022\024\n\014v_signed_int\030\002 \001(\022" +
+      "\022\026\n\016v_unsigned_int\030\003 \001(\004\0221\n\010v_octets\030\005 \001" +
+      "(\0132\037.Polarx.Datatypes.Scalar.Octets\022\020\n\010v" +
+      "_double\030\006 \001(\001\022\017\n\007v_float\030\007 \001(\002\022\016\n\006v_bool" +
+      "\030\010 \001(\010\0221\n\010v_string\030\t \001(\0132\037.Polarx.Dataty" +
+      "pes.Scalar.String\022\022\n\nv_position\030\n \001(\r\0225\n" +
+      "\014v_identifier\030\013 \001(\0132\037.Polarx.Datatypes.S" +
+      "calar.String\022<\n\023v_identifier_galaxy\030\025 \001(" +
+      "\0132\037.Polarx.Datatypes.Scalar.String\032*\n\006St" +
+      "ring\022\r\n\005value\030\001 \002(\014\022\021\n\tcollation\030\002 \001(\004\032-" +
+      "\n\006Octets\022\r\n\005value\030\001 \002(\014\022\024\n\014content_type\030" +
+      "\002 \001(\r\"\275\001\n\004Type\022\n\n\006V_SINT\020\001\022\n\n\006V_UINT\020\002\022\n" +
+      "\n\006V_NULL\020\003\022\014\n\010V_OCTETS\020\004\022\014\n\010V_DOUBLE\020\005\022\013" +
+      "\n\007V_FLOAT\020\006\022\n\n\006V_BOOL\020\007\022\014\n\010V_STRING\020\010\022\021\n" +
+      "\rV_PLACEHOLDER\020\t\022\020\n\014V_IDENTIFIER\020\n\022\020\n\014V_" +
+      "RAW_STRING\020\013\022\027\n\023V_IDENTIFIER_GALAXY\020\025\"}\n" +
+      "\006Object\0221\n\003fld\030\001 \003(\0132$.Polarx.Datatypes." +
+      "Object.ObjectField\032@\n\013ObjectField\022\013\n\003key" +
+      "\030\001 \002(\t\022$\n\005value\030\002 \002(\0132\025.Polarx.Datatypes" +
+      ".Any\"-\n\005Array\022$\n\005value\030\001 \003(\0132\025.Polarx.Da" +
+      "tatypes.Any\"\323\001\n\003Any\022(\n\004type\030\001 \002(\0162\032.Pola" +
+      "rx.Datatypes.Any.Type\022(\n\006scalar\030\002 \001(\0132\030." +
+      "Polarx.Datatypes.Scalar\022%\n\003obj\030\003 \001(\0132\030.P" +
+      "olarx.Datatypes.Object\022&\n\005array\030\004 \001(\0132\027." +
+      "Polarx.Datatypes.Array\")\n\004Type\022\n\n\006SCALAR" +
+      "\020\001\022\n\n\006OBJECT\020\002\022\t\n\005ARRAY\020\003\"G\n\017SessionVari" +
+      "able\022\013\n\003key\030\001 \002(\t\022\'\n\005value\030\002 \002(\0132\030.Polar" +
+      "x.Datatypes.ScalarB\031\n\027com.mysql.cj.x.pro" +
+      "tobuf"
+    };
+    descriptor = com.google.protobuf.Descriptors.FileDescriptor
+      .internalBuildGeneratedFileFrom(descriptorData,
+        new com.google.protobuf.Descriptors.FileDescriptor[] {
+        });
+    internal_static_Polarx_Datatypes_Scalar_descriptor =
+      getDescriptor().getMessageTypes().get(0);
+    internal_static_Polarx_Datatypes_Scalar_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessageV3.FieldAccessorTable(
         internal_static_Polarx_Datatypes_Scalar_descriptor,
         new java.lang.String[] { "Type", "VSignedInt", "VUnsignedInt", "VOctets", "VDouble", "VFloat", "VBool", "VString", "VPosition", "VIdentifier", "VIdentifierGalaxy", });

@@ -19,6 +19,8 @@ package com.alibaba.polardbx.rpc;
 import com.alibaba.polardbx.common.jdbc.TableName;
 import com.alibaba.polardbx.common.utils.GeneralUtil;
 import com.alibaba.polardbx.rpc.client.XSession;
+import com.alibaba.polardbx.common.utils.GeneralUtil;
+import com.alibaba.polardbx.rpc.client.XSession;
 import com.google.protobuf.ByteString;
 import com.mysql.cj.x.protobuf.PolarxDatatypes;
 
@@ -36,6 +38,18 @@ import java.sql.Timestamp;
  * @version 1.0
  */
 public class XUtil {
+
+    public static PolarxDatatypes.Scalar genUtf8RawStringScalar(String value) {
+        final PolarxDatatypes.Scalar.String.Builder stringBuilder = PolarxDatatypes.Scalar.String.newBuilder();
+        final PolarxDatatypes.Scalar.Builder scalarBuilder = PolarxDatatypes.Scalar.newBuilder();
+
+        // Default 33.
+        // stringBuilder.setCollation(33); // utf8mb3 / bytes
+        stringBuilder.setValue(ByteString.copyFromUtf8(value));
+        scalarBuilder.setType(PolarxDatatypes.Scalar.Type.V_RAW_STRING);
+        scalarBuilder.setVString(stringBuilder);
+        return scalarBuilder.build();
+    }
 
     public static PolarxDatatypes.Scalar genUtf8StringScalar(String value) {
         final PolarxDatatypes.Scalar.String.Builder stringBuilder = PolarxDatatypes.Scalar.String.newBuilder();
@@ -156,7 +170,11 @@ public class XUtil {
                 return genUtf8StringScalar(value.toString());
             }
         } else if (value instanceof BigDecimal) {
-            return genUtf8StringScalar(value.toString());
+            if (session != null && session.supportRawString()) {
+                return genUtf8RawStringScalar(value.toString());
+            } else {
+                return genUtf8StringScalar(value.toString());
+            }
         } else if (value instanceof Date) {
             return genUtf8StringScalar(value.toString());
         } else if (value instanceof Time) {

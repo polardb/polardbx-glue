@@ -50,6 +50,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.Executor;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * @version 1.0
@@ -57,6 +58,7 @@ import java.util.concurrent.Executor;
  */
 public class XConnection implements AutoCloseable, Connection {
 
+    private ReentrantReadWriteLock sessionLock = new ReentrantReadWriteLock();
     private XSession session; // Null if closed.
     private boolean initialized = false;
 
@@ -84,15 +86,20 @@ public class XConnection implements AutoCloseable, Connection {
         }
     }
 
-    public synchronized void init() throws SQLException {
+    public void init() throws SQLException {
         if (!initialized) {
             // Reset to autocommit.
-            session.setAutoCommit(this, true);
+            sessionLock.readLock().lock();
+            try {
+                session.setAutoCommit(this, true);
+            } finally {
+                sessionLock.readLock().unlock();
+            }
             initialized = true;
         }
     }
 
-    // Must hold the lock.
+    // Must hold the RW lock.
     private void check() throws SQLException {
         if (null == session) {
             throw new SQLException(this + " closed.", "Closed.");
@@ -102,40 +109,46 @@ public class XConnection implements AutoCloseable, Connection {
     }
 
     @Override
-    public synchronized void close() {
-        if (session != null) {
-            try {
-                // Transaction safety insurance.
-                if (!session.isAutoCommit()) {
-                    execUpdate("rollback", null, true); // Rollback in case of any uncommitted trx.
-                }
-                session.flushIgnorable(this);
-                final XResult lastRequest = session.getLastRequest();
-                if (lastRequest != null && !lastRequest.isGoodAndDone()) {
-                    XLog.XLogLogger.error(this + " last req unclosed. " + lastRequest.getSql());
-                }
-            } catch (Throwable e) {
-                session.setLastException(e);
-                XLog.XLogLogger.error(e);
-            } finally {
-                final XClient parent = session.getClient();
+    public void close() {
+        sessionLock.writeLock().lock();
+        try {
+            if (session != null) {
                 try {
-                    if (!parent.reuseSession(session)) {
-                        parent.dropSession(session);
+                    // Transaction safety insurance.
+                    if (!session.isAutoCommit()) {
+                        // Rollback in case of any uncommitted trx.
+                        session.execUpdate(this, "rollback", null, true, null);
+                    }
+                    session.flushIgnorable(this);
+                    final XResult lastRequest = session.getLastRequest();
+                    if (lastRequest != null && !lastRequest.isGoodAndDone()) {
+                        XLog.XLogLogger.error(this + " last req unclosed. " + lastRequest.getSql());
                     }
                 } catch (Throwable e) {
-                    XLog.XLogLogger.error(this + " failed to check session.");
+                    session.setLastException(e);
                     XLog.XLogLogger.error(e);
-                    try {
-                        parent.dropSession(session);
-                    } catch (Exception e1) {
-                        XLog.XLogLogger.error(this + " failed to drop session.");
-                        XLog.XLogLogger.error(e);
-                    }
                 } finally {
-                    session = null;
+                    final XClient parent = session.getClient();
+                    try {
+                        if (!parent.reuseSession(session)) {
+                            parent.dropSession(session);
+                        }
+                    } catch (Throwable e) {
+                        XLog.XLogLogger.error(this + " failed to check session.");
+                        XLog.XLogLogger.error(e);
+                        try {
+                            parent.dropSession(session);
+                        } catch (Exception e1) {
+                            XLog.XLogLogger.error(this + " failed to drop session.");
+                            XLog.XLogLogger.error(e);
+                        }
+                    } finally {
+                        session = null;
+                    }
                 }
             }
+        } finally {
+            sessionLock.writeLock().unlock();
         }
     }
 
@@ -143,12 +156,15 @@ public class XConnection implements AutoCloseable, Connection {
         return session;
     }
 
-    public synchronized XSession getSession() throws SQLException {
-        check();
-        return session;
+    public XSession getSession() throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            return session;
+        } finally {
+            sessionLock.readLock().unlock();
+        }
     }
-
-    // No synchronized for performance.
 
     public boolean isStreamMode() {
         return streamMode;
@@ -218,9 +234,14 @@ public class XConnection implements AutoCloseable, Connection {
         kill(true, true);
     }
 
-    public synchronized void kill(boolean pushKilled, boolean withClose) throws SQLException {
-        check();
-        session.kill(pushKilled);
+    public void kill(boolean pushKilled, boolean withClose) throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            session.kill(pushKilled);
+        } finally {
+            sessionLock.readLock().unlock();
+        }
         if (withClose) {
             close();
         }
@@ -241,134 +262,254 @@ public class XConnection implements AutoCloseable, Connection {
         session.setLazyCommitSeq(lazyCommitSeq);
     }
 
-    public synchronized XResult execQuery(PolarxExecPlan.ExecPlan.Builder execPlan, String nativeSql)
+    public XResult execQuery(PolarxExecPlan.ExecPlan.Builder execPlan, String nativeSql)
         throws SQLException {
-        check();
-        return session.execQuery(this, execPlan, nativeSql, false);
+        sessionLock.readLock().lock();
+        try {
+            check();
+            return session.execQuery(this, execPlan, nativeSql, false);
+        } finally {
+            sessionLock.readLock().unlock();
+        }
     }
 
-    public synchronized XResult execQuery(PolarxExecPlan.ExecPlan.Builder execPlan, String nativeSql,
-                                          boolean ignoreResult) throws SQLException {
-        check();
-        return session.execQuery(this, execPlan, nativeSql, ignoreResult);
+    public XResult execQuery(PolarxExecPlan.ExecPlan.Builder execPlan, String nativeSql,
+                             boolean ignoreResult) throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            return session.execQuery(this, execPlan, nativeSql, ignoreResult);
+        } finally {
+            sessionLock.readLock().unlock();
+        }
     }
 
-    public synchronized XResult execQuery(String sql) throws SQLException {
-        check();
-        return session.execQuery(this, sql, null, false, null);
+    public XResult execQuery(String sql) throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            return session.execQuery(this, sql, null, false, null);
+        } finally {
+            sessionLock.readLock().unlock();
+        }
     }
 
-    public synchronized XResult execQuery(String sql, List<PolarxDatatypes.Any> args) throws SQLException {
-        check();
-        return session.execQuery(this, sql, args, false, null);
+    public XResult execQuery(String sql, List<PolarxDatatypes.Any> args) throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            return session.execQuery(this, sql, args, false, null);
+        } finally {
+            sessionLock.readLock().unlock();
+        }
     }
 
-    public synchronized XResult execQuery(String sql, List<PolarxDatatypes.Any> args, boolean ignoreResult)
+    public XResult execQuery(String sql, List<PolarxDatatypes.Any> args, boolean ignoreResult)
         throws SQLException {
-        check();
-        return session.execQuery(this, sql, args, ignoreResult, null);
+        sessionLock.readLock().lock();
+        try {
+            check();
+            return session.execQuery(this, sql, args, ignoreResult, null);
+        } finally {
+            sessionLock.readLock().unlock();
+        }
     }
 
-    public synchronized XResult execQuery(String sql, List<PolarxDatatypes.Any> args, boolean ignoreResult,
-                                          ByteString digest)
+    public XResult execQuery(String sql, List<PolarxDatatypes.Any> args, boolean ignoreResult,
+                             ByteString digest)
         throws SQLException {
-        check();
-        return session.execQuery(this, sql, args, ignoreResult, digest);
+        sessionLock.readLock().lock();
+        try {
+            check();
+            return session.execQuery(this, sql, args, ignoreResult, digest);
+        } finally {
+            sessionLock.readLock().unlock();
+        }
     }
 
-    public synchronized long execUpdate(String sql) throws SQLException {
-        check();
-        return session.execUpdate(this, sql, null, false, null).getRowsAffected();
+    public long execUpdate(String sql) throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            return session.execUpdate(this, sql, null, false, null).getRowsAffected();
+        } finally {
+            sessionLock.readLock().unlock();
+        }
     }
 
-    public synchronized long execUpdate(String sql, List<PolarxDatatypes.Any> args) throws SQLException {
-        check();
-        return session.execUpdate(this, sql, args, false, null).getRowsAffected();
+    public long execUpdate(String sql, List<PolarxDatatypes.Any> args) throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            return session.execUpdate(this, sql, args, false, null).getRowsAffected();
+        } finally {
+            sessionLock.readLock().unlock();
+        }
     }
 
-    public synchronized XResult execUpdate(String sql, List<PolarxDatatypes.Any> args, boolean ignoreResult)
+    public XResult execUpdate(String sql, List<PolarxDatatypes.Any> args, boolean ignoreResult)
         throws SQLException {
-        check();
-        return session.execUpdate(this, sql, args, ignoreResult, null);
+        sessionLock.readLock().lock();
+        try {
+            check();
+            return session.execUpdate(this, sql, args, ignoreResult, null);
+        } finally {
+            sessionLock.readLock().unlock();
+        }
     }
 
-    public synchronized XResult execUpdate(String sql, List<PolarxDatatypes.Any> args, boolean ignoreResult,
-                                           ByteString digest)
+    public XResult execUpdate(String sql, List<PolarxDatatypes.Any> args, boolean ignoreResult,
+                              ByteString digest)
         throws SQLException {
-        check();
-        return session.execUpdate(this, sql, args, ignoreResult, digest);
+        sessionLock.readLock().lock();
+        try {
+            check();
+            return session.execUpdate(this, sql, args, ignoreResult, digest);
+        } finally {
+            sessionLock.readLock().unlock();
+        }
     }
 
-    public synchronized XResult execUpdateReturning(String sql, List<PolarxDatatypes.Any> args, String returning)
+    public XResult execUpdateReturning(String sql, List<PolarxDatatypes.Any> args, String returning)
         throws SQLException {
-        check();
-        return session.execQuery(this, sql, args, false, null, returning);
+        sessionLock.readLock().lock();
+        try {
+            check();
+            return session.execQuery(this, sql, args, false, null, returning);
+        } finally {
+            sessionLock.readLock().unlock();
+        }
     }
 
-    public synchronized long getTSO(int count) throws SQLException {
-        check();
-        return session.getTSO(this, count);
+    public long getTSO(int count) throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            return session.getTSO(this, count);
+        } finally {
+            sessionLock.readLock().unlock();
+        }
     }
 
-    public synchronized void flushNetwork() throws SQLException {
-        check();
-        session.flushNetwork();
+    public void flushNetwork() throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            session.flushNetwork();
+        } finally {
+            sessionLock.readLock().unlock();
+        }
     }
 
-    public synchronized boolean supportMessageTimestamp() throws SQLException {
-        check();
-        return session.supportMessageTimestamp();
+    public boolean supportMessageTimestamp() throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            return session.supportMessageTimestamp();
+        } finally {
+            sessionLock.readLock().unlock();
+        }
     }
 
-    public synchronized boolean supportSingleShardOptimization() throws SQLException {
-        check();
-        return session.supportSingleShardOptimization();
+    public boolean supportSingleShardOptimization() throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            return session.supportSingleShardOptimization();
+        } finally {
+            sessionLock.readLock().unlock();
+        }
     }
 
     public long getConnectionId() throws SQLException {
-        check();
-        return session.getConnectionId(this);
+        sessionLock.readLock().lock();
+        try {
+            check();
+            return session.getConnectionId(this);
+        } finally {
+            sessionLock.readLock().unlock();
+        }
     }
 
-    public synchronized XResult getLastUserRequest() throws SQLException {
-        check();
-        return session.getLastUserRequest();
+    public XResult getLastUserRequest() throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            return session.getLastUserRequest();
+        } finally {
+            sessionLock.readLock().unlock();
+        }
     }
 
-    public synchronized void cancel() throws SQLException {
-        check();
-        session.cancel();
+    public void cancel() throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            session.cancel();
+        } finally {
+            sessionLock.readLock().unlock();
+        }
     }
 
-    public synchronized Throwable getLastException() throws SQLException {
-        check();
-        return session.getLastException();
+    public Throwable getLastException() throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            return session.getLastException();
+        } finally {
+            sessionLock.readLock().unlock();
+        }
     }
 
-    public synchronized Throwable setLastException(Throwable lastException) throws SQLException {
-        check();
-        return session.setLastException(lastException);
+    public Throwable setLastException(Throwable lastException) throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            return session.setLastException(lastException);
+        } finally {
+            sessionLock.readLock().unlock();
+        }
     }
 
-    public synchronized void tokenOffer() throws SQLException {
-        check();
-        session.tokenOffer(defaultTokenCount);
+    public void tokenOffer() throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            session.tokenOffer(defaultTokenCount);
+        } finally {
+            sessionLock.readLock().unlock();
+        }
     }
 
-    public synchronized void setDefaultDB(String defaultDB) throws SQLException {
-        check();
-        session.setDefaultDB(defaultDB);
+    public void setDefaultDB(String defaultDB) throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            session.setDefaultDB(defaultDB);
+        } finally {
+            sessionLock.readLock().unlock();
+        }
     }
 
-    public synchronized void setSessionVariables(Map<String, Object> newServerVariables)
+    public void setSessionVariables(Map<String, Object> newServerVariables)
         throws SQLException {
-        check();
-        session.setSessionVariables(this, newServerVariables);
+        sessionLock.readLock().lock();
+        try {
+            check();
+            session.setSessionVariables(this, newServerVariables);
+        } finally {
+            sessionLock.readLock().unlock();
+        }
     }
 
-    public synchronized void setGlobalVariables(Map<String, Object> newGlobalVariables) throws SQLException {
-        check();
-        session.setGlobalVariables(this, newGlobalVariables);
+    public void setGlobalVariables(Map<String, Object> newGlobalVariables) throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            session.setGlobalVariables(this, newGlobalVariables);
+        } finally {
+            sessionLock.readLock().unlock();
+        }
     }
 
     /**
@@ -405,32 +546,40 @@ public class XConnection implements AutoCloseable, Connection {
     }
 
     @Override
-    public synchronized void setAutoCommit(boolean autoCommit) throws SQLException {
-        check();
-        session.setAutoCommit(this, autoCommit);
+    public void setAutoCommit(boolean autoCommit) throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            session.setAutoCommit(this, autoCommit);
+        } finally {
+            sessionLock.readLock().unlock();
+        }
         this.autoCommit = autoCommit;
     }
 
     @Override
-    public synchronized boolean getAutoCommit() throws SQLException {
+    public boolean getAutoCommit() throws SQLException {
         return this.autoCommit;
     }
 
     @Override
-    public synchronized void commit() throws SQLException {
-        check();
+    public void commit() throws SQLException {
         execUpdate("commit");
     }
 
     @Override
-    public synchronized void rollback() throws SQLException {
-        check();
+    public void rollback() throws SQLException {
         execUpdate("rollback");
     }
 
     @Override
-    public synchronized boolean isClosed() throws SQLException {
-        return null == session;
+    public boolean isClosed() throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            return null == session;
+        } finally {
+            sessionLock.readLock().unlock();
+        }
     }
 
     @Override
@@ -459,55 +608,72 @@ public class XConnection implements AutoCloseable, Connection {
     }
 
     @Override
-    public synchronized void setTransactionIsolation(int level) throws SQLException {
-        check();
-        if (level == session.getIsolation()) {
-            return;
-        }
-        final String sql, levelString;
-        switch (level) {
-        case Connection.TRANSACTION_READ_UNCOMMITTED:
-            sql = "set session transaction isolation level read uncommitted";
-            levelString = "READ-UNCOMMITTED";
-            break;
-
-        case Connection.TRANSACTION_READ_COMMITTED:
-            sql = "set session transaction isolation level read committed";
-            levelString = "READ-COMMITTED";
-            break;
-
-        case Connection.TRANSACTION_REPEATABLE_READ:
-            sql = "set session transaction isolation level repeatable read";
-            levelString = "REPEATABLE-READ";
-            break;
-
-        case Connection.TRANSACTION_SERIALIZABLE:
-            sql = "set session transaction isolation level serializable";
-            levelString = "SERIALIZABLE";
-            break;
-
-        default:
-            throw new SQLException("Unknown transaction isolation level: " + level);
-        }
-        getSession().stashTransactionSequence();
+    public void setTransactionIsolation(int level) throws SQLException {
+        sessionLock.readLock().lock();
         try {
-            execUpdate(sql, null, true); // Set ignore is ok, drop connection when fail.
-            session.updateIsolation(levelString);
+            check();
+            if (level == session.getIsolation()) {
+                return;
+            }
+            final String sql, levelString;
+            switch (level) {
+            case Connection.TRANSACTION_READ_UNCOMMITTED:
+                sql = "set session transaction isolation level read uncommitted";
+                levelString = "READ-UNCOMMITTED";
+                break;
+
+            case Connection.TRANSACTION_READ_COMMITTED:
+                sql = "set session transaction isolation level read committed";
+                levelString = "READ-COMMITTED";
+                break;
+
+            case Connection.TRANSACTION_REPEATABLE_READ:
+                sql = "set session transaction isolation level repeatable read";
+                levelString = "REPEATABLE-READ";
+                break;
+
+            case Connection.TRANSACTION_SERIALIZABLE:
+                sql = "set session transaction isolation level serializable";
+                levelString = "SERIALIZABLE";
+                break;
+
+            default:
+                throw new SQLException("Unknown transaction isolation level: " + level);
+            }
+            session.stashTransactionSequence();
+            try {
+                // Set ignore is ok, drop connection when fail.
+                session.execUpdate(this, sql, null, true, null);
+                session.updateIsolation(levelString);
+            } finally {
+                session.stashPopTransactionSequence();
+            }
         } finally {
-            getSession().stashPopTransactionSequence();
+            sessionLock.readLock().unlock();
         }
     }
 
     @Override
-    public synchronized int getTransactionIsolation() throws SQLException {
-        check();
-        return session.getIsolation();
+    public int getTransactionIsolation() throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            return session.getIsolation();
+        } finally {
+            sessionLock.readLock().unlock();
+        }
     }
 
     @Override
-    public synchronized SQLWarning getWarnings() throws SQLException {
-        check();
-        final XResult last = session.getLastUserRequest();
+    public SQLWarning getWarnings() throws SQLException {
+        final XResult last;
+        sessionLock.readLock().lock();
+        try {
+            check();
+            last = session.getLastUserRequest();
+        } finally {
+            sessionLock.readLock().unlock();
+        }
         final PolarxNotice.Warning warning = null == last ? null : last.getWarning();
         return null == warning ? null : new SQLWarning(warning.getMsg(), "", warning.getCode());
     }

@@ -28,8 +28,8 @@ public class XPacket {
     public final static int VERSION_OFFSET = 8;
     public final static byte VERSION = 0;
     public final static int LENGTH_SIZE = 4;
-    public final static int LENGTH_OFFSET = XConfig.GALAXY_X_PROTOCOL ? 9 : 8;
-    public final static int TYPE_OFFSET = XConfig.GALAXY_X_PROTOCOL ? 13 : 12;
+    public static int LENGTH_OFFSET = XConfig.GALAXY_X_PROTOCOL ? 9 : 8;
+    public static int TYPE_OFFSET = XConfig.GALAXY_X_PROTOCOL ? 13 : 12;
     public final static int TYPE_SIZE = 1;
 
     public final static XPacket EOF = new XPacket(-1, Polarx.ServerMessages.Type.ERROR_VALUE,

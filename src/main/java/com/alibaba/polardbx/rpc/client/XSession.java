@@ -969,6 +969,10 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
     }
 
     private void dataNotify() {
+        dataNotify(true);
+    }
+
+    private void dataNotify(boolean with_lock) {
         XResult probe = lastRequest;
         if (probe != null) {
             // Do pkt timing first.
@@ -983,7 +987,11 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             final boolean needPush = probe.getDataNotify() != null;
             if (needPush) {
                 final XResult real;
-                synchronized (this) {
+                if (with_lock) {
+                    synchronized (this) {
+                        real = XConfig.GALAXY_X_PROTOCOL ? lastUserRequest : lastRequest;
+                    }
+                } else {
                     real = XConfig.GALAXY_X_PROTOCOL ? lastUserRequest : lastRequest;
                 }
                 if (real != null) {
@@ -998,7 +1006,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
 
     public void pushFatal(XPacket fatal) {
         packetQueue.put(fatal);
-        dataNotify();
+        dataNotify(false); // Never hold the lock(deadlock may occur) because this may invoke from other thread.
     }
 
     public void kill(boolean pushKilled) {
@@ -1755,7 +1763,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             addActive();
             result = lastUserRequest = lastRequest = new XResult(connection, packetQueue, lastRequest,
                 startNanos, startNanos + connection.actualTimeoutNanos(),
-                startNanos + XConfig.DEFAULT_TOTAL_TIMEOUT_NANOS,
+                startNanos + connection.actualTimeoutNanos(), // for TSO never wait too long
                 false, XResult.RequestType.FETCH_TSO, GET_TSO_SQL, connection.getDefaultTokenCount(), null, null);
         } catch (Throwable t) {
             lastException = t; // This exception should drop the connection.
@@ -1805,6 +1813,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
     private Boolean flagQueryChunk = null;
     private Boolean flagSingleShardOptimization = null;
     private Boolean flagFeedback = null;
+    private Boolean flagRawString = null;
 
     public boolean supportMessageTimestamp() {
         if (XConfig.GALAXY_X_PROTOCOL) {
@@ -1869,7 +1878,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                 XLog.XLogLogger.error(this + " unknown xdb minor version: " + minor);
             }
         } else if (client.getBaseVersion() == XClient.DnBaseVersion.DN_RDS_80_X_CLUSTER) {
-            return flagMessageTimestamp = true; // Enable by default.
+            return flagQueryCache = true; // Enable by default.
         }
         return flagQueryCache = false;
     }
@@ -1903,7 +1912,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                 XLog.XLogLogger.error(this + " unknown xdb minor version: " + minor);
             }
         } else if (client.getBaseVersion() == XClient.DnBaseVersion.DN_RDS_80_X_CLUSTER) {
-            return flagMessageTimestamp = true; // Enable by default.
+            return flagQueryChunk = true; // Enable by default.
         }
         return flagQueryChunk = false;
     }
@@ -1938,7 +1947,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                 XLog.XLogLogger.error(this + " unknown xdb minor version: " + minor);
             }
         } else if (client.getBaseVersion() == XClient.DnBaseVersion.DN_RDS_80_X_CLUSTER) {
-            return flagMessageTimestamp = true; // Enable by default.
+            return flagSingleShardOptimization = true; // Enable by default.
         }
         return flagSingleShardOptimization = false;
     }
@@ -1973,9 +1982,41 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                 XLog.XLogLogger.error(this + " unknown xdb minor version: " + minor);
             }
         } else if (client.getBaseVersion() == XClient.DnBaseVersion.DN_RDS_80_X_CLUSTER) {
-            return flagMessageTimestamp = true; // Enable by default.
+            return flagFeedback = true; // Enable by default.
         }
         return flagFeedback = false;
+    }
+
+    public boolean supportRawString() {
+        if (XConfig.GALAXY_X_PROTOCOL) {
+            return false;
+        }
+
+        if (flagRawString != null) {
+            return flagRawString;
+        }
+        if (!client.isActive()) {
+            return false; // Initializing.
+        }
+
+        if (client.getBaseVersion() == XClient.DnBaseVersion.DN_X_CLUSTER) {
+            final String minor = client.getMinorVersion();
+            if (minor.equals("local")) {
+                // Reuse the timestamp option.
+                return flagRawString = XConfig.X_LOCAL_ENABLE_RAW_STRING;
+            }
+            try {
+                final long ver = Long.parseLong(minor);
+                if (ver >= 20211104L) { // Since 1.6.1.0 20211104
+                    return flagRawString = true;
+                }
+            } catch (Exception e) {
+                XLog.XLogLogger.error(this + " unknown xdb minor version: " + minor);
+            }
+        } else if (client.getBaseVersion() == XClient.DnBaseVersion.DN_RDS_80_X_CLUSTER) {
+            return flagRawString = false; // Disable by default.
+        }
+        return flagRawString = false;
     }
 
     /**

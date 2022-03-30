@@ -29,6 +29,8 @@ public class XConfig {
     public final static boolean X_LOCAL_ENABLE_CHUNK_RESULT = true;
     // TODO: Set true if local debug XDB with this feature.
     public final static boolean X_LOCAL_ENABLE_FEEDBACK = true;
+    // TODO: Set true if local debug XDB with this feature.
+    public final static boolean X_LOCAL_ENABLE_RAW_STRING = true;
 
     public final static String X_USER = "mysqlxsys";
     public final static String X_TYPE = "xdb";

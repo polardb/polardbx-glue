@@ -56,8 +56,8 @@ public class XResult implements AutoCloseable {
     private final XPacketQueue pipe;
     private XResult previous;
     private final long startNanos;
-    private final long queryTimeoutNanos; // First line should come before this time.
-    private final long totalTimeoutNanos; // All fetch operation should finish before this time.
+    private long queryTimeoutNanos; // First line should come before this time.
+    private long totalTimeoutNanos; // All fetch operation should finish before this time.
     private final boolean ignoreResult;
     private boolean isFatalOnIgnorable = true; // Default fatal when error on ignorable.
 
@@ -558,6 +558,17 @@ public class XResult implements AutoCloseable {
                 "Fetch next on a XResult with error or fatal state.");
         } else if (ResultStatus.XResultFinish == status) {
             return null;
+        }
+
+        // Special fix for fetch TSO.
+        if (requestType == RequestType.FETCH_TSO) {
+            XResult probe = this.previous;
+            while (probe != null) {
+                // Force any previous' timeout to TSO timeout.
+                probe.queryTimeoutNanos = queryTimeoutNanos;
+                probe.totalTimeoutNanos = totalTimeoutNanos;
+                probe = probe.previous;
+            }
         }
 
         // Wait previous request before fetch packet.
