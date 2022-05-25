@@ -56,7 +56,7 @@ public class NIOWorker {
         if (threadNumber > MAX_THREADS) {
             threadNumber = MAX_THREADS;
         }
-        int bufPerThread = (int) (MAX_BUF_SIZE / threadNumber);
+        long bufPerThread = MAX_BUF_SIZE / threadNumber;
         if (bufPerThread > NIOProcessor.DEFAULT_BUFFER_SIZE) {
             bufPerThread = NIOProcessor.DEFAULT_BUFFER_SIZE;
         }
@@ -66,7 +66,7 @@ public class NIOWorker {
         try {
             for (int i = 0; i < threadNumber; ++i) {
                 processors[i] =
-                    new NIOProcessor("X-NIO-Worker-" + i, bufPerThread, NIOProcessor.DEFAULT_BUFFER_CHUNK_SIZE);
+                    new NIOProcessor("X-NIO-Worker-" + i, (int) bufPerThread, NIOProcessor.DEFAULT_BUFFER_CHUNK_SIZE);
                 processors[i].startup();
             }
         } catch (Throwable e) {
