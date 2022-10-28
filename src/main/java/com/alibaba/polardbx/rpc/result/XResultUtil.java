@@ -16,10 +16,12 @@
 
 package com.alibaba.polardbx.rpc.result;
 
+import com.alibaba.polardbx.common.CrcAccumulator;
 import com.alibaba.polardbx.common.charset.MySQLUnicodeUtils;
 import com.alibaba.polardbx.common.datatype.DecimalConverter;
 import com.alibaba.polardbx.common.datatype.DecimalStructure;
 import com.alibaba.polardbx.common.datatype.FastDecimalUtils;
+import com.alibaba.polardbx.common.datatype.RawBytesDecimalUtils;
 import com.alibaba.polardbx.common.datatype.UInt64Utils;
 import com.alibaba.polardbx.common.exception.TddlRuntimeException;
 import com.alibaba.polardbx.common.exception.code.ErrorCode;
@@ -50,6 +52,7 @@ import java.nio.CharBuffer;
 import java.sql.Types;
 import java.time.ZoneId;
 import java.util.Arrays;
+import java.util.Optional;
 import java.util.TimeZone;
 import java.util.function.BiFunction;
 
@@ -739,16 +742,24 @@ public class XResultUtil {
         }
     }
 
+    /**
+     *
+     */
     public static void resultToColumnVector(PolarxResultset.ColumnMetaData meta, ByteString data, String targetCharset,
                                             ColumnVector columnVector, int rowNumber, boolean flipUnsigned,
                                             int precision, int scale, int length, ZoneId timezone,
-                                            ColumnVector redundantColumnVector, BiFunction<byte[], Integer, byte[]> collationHandler)
+                                            ColumnVector redundantColumnVector,
+                                            BiFunction<byte[], Integer, byte[]> collationHandler,
+                                            Optional<CrcAccumulator> accumulator)
         throws Exception {
+
         if (0 == data.size()) {
             if (columnVector instanceof LongColumnVector) {
                 columnVector.isNull[rowNumber] = true;
                 columnVector.noNulls = false;
                 ((LongColumnVector) columnVector).vector[rowNumber] = 0;
+
+                accumulator.ifPresent(CrcAccumulator::appendNull);
                 return;
             } else if (columnVector instanceof BytesColumnVector) {
                 columnVector.isNull[rowNumber] = true;
@@ -759,11 +770,15 @@ public class XResultUtil {
                     redundantColumnVector.noNulls = false;
                     ((BytesColumnVector) redundantColumnVector).setRef(rowNumber, EMPTY_BYTES, 0, 0);
                 }
+
+                accumulator.ifPresent(CrcAccumulator::appendNull);
                 return;
             } else if (columnVector instanceof DoubleColumnVector) {
                 columnVector.isNull[rowNumber] = true;
                 columnVector.noNulls = false;
                 ((DoubleColumnVector) columnVector).vector[rowNumber] = 0;
+
+                accumulator.ifPresent(CrcAccumulator::appendNull);
                 return;
             }
             throw new UnsupportedOperationException("Unsupported column vector: " + columnVector);
@@ -772,38 +787,79 @@ public class XResultUtil {
         final CodedInputStream stream = data.newCodedInput();
 
         switch (meta.getType()) {
-        case SINT:
+        case SINT: {
             // for signed bigint
-            ((LongColumnVector) columnVector).vector[rowNumber] = stream.readSInt64();
+            long sInt64 = stream.readSInt64();
+            ((LongColumnVector) columnVector).vector[rowNumber] = sInt64;
+
+            switch (meta.getOriginalType()) {
+            case MYSQL_TYPE_LONGLONG:
+                accumulator.ifPresent(a -> a.appendHash(Long.hashCode(sInt64)));
+                break;
+            case MYSQL_TYPE_LONG:
+            case MYSQL_TYPE_INT24:
+                accumulator.ifPresent(a -> a.appendHash((int) sInt64));
+                break;
+            case MYSQL_TYPE_SHORT:
+                accumulator.ifPresent(a -> a.appendHash(Short.hashCode((short) sInt64)));
+                break;
+            case MYSQL_TYPE_TINY:
+                accumulator.ifPresent(a -> a.appendHash(Byte.hashCode((byte) sInt64)));
+                break;
+            default:
+            }
+
             return;
+        }
 
         case UINT: {
             switch (meta.getOriginalType()) {
-            case MYSQL_TYPE_YEAR:
+            case MYSQL_TYPE_YEAR: {
                 // for year type
-                ((LongColumnVector) columnVector).vector[rowNumber] = stream.readUInt64();
+                long uInt64 = stream.readUInt64();
+                ((LongColumnVector) columnVector).vector[rowNumber] = uInt64;
+                accumulator.ifPresent(a -> a.appendHash(Long.hashCode(uInt64)));
                 break;
-            case MYSQL_TYPE_LONGLONG:
-            default:
+            }
+            default: {
+                long uInt64 = stream.readUInt64();
                 // for unsigned bigint
                 if (flipUnsigned) {
-                    ((LongColumnVector) columnVector).vector[rowNumber] = stream.readUInt64() ^ UInt64Utils.FLIP_MASK;
+                    ((LongColumnVector) columnVector).vector[rowNumber] = uInt64 ^ UInt64Utils.FLIP_MASK;
                 } else {
-                    ((LongColumnVector) columnVector).vector[rowNumber] = stream.readUInt64();
+                    ((LongColumnVector) columnVector).vector[rowNumber] = uInt64;
                 }
-                break;
+
+                switch (meta.getOriginalType()) {
+                case MYSQL_TYPE_LONGLONG:
+                case MYSQL_TYPE_LONG:
+                    accumulator.ifPresent(a -> a.appendHash(Long.hashCode(uInt64)));
+                    break;
+                case MYSQL_TYPE_INT24:
+                case MYSQL_TYPE_SHORT:
+                    accumulator.ifPresent(a -> a.appendHash((int) uInt64));
+                    break;
+                case MYSQL_TYPE_TINY:
+                    accumulator.ifPresent(a -> a.appendHash(Short.hashCode((short) uInt64)));
+                    break;
+                }
+            }
             }
             return;
         }
 
         case DOUBLE:
             // for double
-            ((DoubleColumnVector) columnVector).vector[rowNumber] = stream.readDouble();
+            double doubleVal = stream.readDouble();
+            ((DoubleColumnVector) columnVector).vector[rowNumber] = doubleVal;
+            accumulator.ifPresent(a -> a.appendHash(Double.hashCode(doubleVal)));
             return;
 
         case FLOAT:
             // for float
-            ((DoubleColumnVector) columnVector).vector[rowNumber] = stream.readFloat();
+            float floatVal = stream.readFloat();
+            ((DoubleColumnVector) columnVector).vector[rowNumber] = floatVal;
+            accumulator.ifPresent(a -> a.appendHash(Float.hashCode(floatVal)));
             return;
 
         case BYTES: {
@@ -812,6 +868,7 @@ public class XResultUtil {
             switch (meta.getContentType()) {
             case CONTENT_TYPE_BYTES_GEOMETRY:
                 ((BytesColumnVector) columnVector).setVal(rowNumber, rawBytes);
+                accumulator.ifPresent(a -> a.appendBytes(rawBytes, 0, rawBytes.length));
                 return;
             case CONTENT_TYPE_BYTES_JSON:
             case CONTENT_TYPE_BYTES_XML:
@@ -838,19 +895,21 @@ public class XResultUtil {
 
                 // build sort key column
                 if (redundantColumnVector != null && collationHandler != null && length != -1) {
-                    ((BytesColumnVector) redundantColumnVector).setVal(rowNumber, collationHandler.apply(rawBytes, length));
+                    ((BytesColumnVector) redundantColumnVector).setVal(rowNumber,
+                        collationHandler.apply(rawBytes, length));
                 }
 
                 if (null == mysqlCharset || mysqlCharset.equalsIgnoreCase(targetCharset) || (isUtf8 && isUtf8(
                     targetCharset))) {
                     // Direct copy.
                     ((BytesColumnVector) columnVector).setVal(rowNumber, rawBytes);
-
+                    accumulator.ifPresent(a -> a.appendBytes(rawBytes, 0, rawBytes.length));
                     return;
                 }
                 byte[] bytesVal = new String(rawBytes, encoding)
                     .getBytes(CharsetMapping.getJavaEncodingForMysqlCharset(targetCharset));
                 ((BytesColumnVector) columnVector).setVal(rowNumber, bytesVal);
+                accumulator.ifPresent(a -> a.appendBytes(bytesVal, 0, bytesVal.length));
                 return;
             }
         }
@@ -881,6 +940,7 @@ public class XResultUtil {
 
             // for time type
             ((LongColumnVector) columnVector).vector[rowNumber] = packed;
+            accumulator.ifPresent(a -> a.appendHash(Long.hashCode(packed)));
             return;
         }
 
@@ -918,6 +978,7 @@ public class XResultUtil {
 
                     // for timestamp / datetime type
                     ((LongColumnVector) columnVector).vector[rowNumber] = packed;
+                    accumulator.ifPresent(a -> a.appendHash(Long.hashCode(packed)));
                     return;
                 }
 
@@ -925,17 +986,23 @@ public class XResultUtil {
                 case MYSQL_TYPE_TIMESTAMP2: {
                     MysqlDateTime mysqlDateTime = new MysqlDateTime(year, month, day, hours, minutes, seconds, nanos);
                     TimeParseStatus timeParseStatus = new TimeParseStatus();
-                    MySQLTimeVal timeVal = MySQLTimeConverter
-                        .convertDatetimeToTimestampWithoutCheck(mysqlDateTime, timeParseStatus, timezone);
+                    MySQLTimeVal timeVal =
+                        MySQLTimeConverter
+                        .convertDatetimeToTimestampWithoutCheck(mysqlDateTime, timeParseStatus,
+                            timezone);
                     if (timeVal == null) {
                         // for error time value, set to zero.
                         timeVal = new MySQLTimeVal();
                     }
-                    if (year == 0 && month == 0 && day == 0 && hours == 0 && minutes == 0 && seconds == 0 && nanos == 0) {
+                    if (year == 0 && month == 0 && day == 0 && hours == 0 && minutes == 0 && seconds == 0
+                        && nanos == 0) {
                         ((LongColumnVector) columnVector).vector[rowNumber] = ZERO_TIMESTAMP_LONG_VAL;
                     } else {
                         ((LongColumnVector) columnVector).vector[rowNumber] = timeValToLong(timeVal);
                     }
+
+                    long packed = TimeStorage.writeTimestamp(mysqlDateTime);
+                    accumulator.ifPresent(a -> a.appendHash(Long.hashCode(packed)));
                     return;
                 }
 
@@ -952,6 +1019,7 @@ public class XResultUtil {
 
                     // for date type
                     ((LongColumnVector) columnVector).vector[rowNumber] = packed;
+                    accumulator.ifPresent(a -> a.appendHash(Long.hashCode(packed)));
                     return;
                 }
 
@@ -962,6 +1030,7 @@ public class XResultUtil {
 
                     // for timestamp / datetime type
                     ((LongColumnVector) columnVector).vector[rowNumber] = packed;
+                    accumulator.ifPresent(a -> a.appendHash(Long.hashCode(packed)));
                     return;
                 }
 
@@ -969,7 +1038,9 @@ public class XResultUtil {
                 case MYSQL_TYPE_TIMESTAMP2: {
                     MysqlDateTime mysqlDateTime = new MysqlDateTime(year, month, day, 0, 0, 0, 0);
                     TimeParseStatus timeParseStatus = new TimeParseStatus();
-                    MySQLTimeVal timeVal = MySQLTimeConverter.convertDatetimeToTimestampWithoutCheck(mysqlDateTime, timeParseStatus, timezone);
+                    MySQLTimeVal timeVal =
+                        MySQLTimeConverter.convertDatetimeToTimestampWithoutCheck(mysqlDateTime, timeParseStatus,
+                            timezone);
                     if (timeVal == null) {
                         // for error time value, set to zero.
                         timeVal = new MySQLTimeVal();
@@ -979,8 +1050,10 @@ public class XResultUtil {
                     } else {
                         ((LongColumnVector) columnVector).vector[rowNumber] = timeValToLong(timeVal);
                     }
-                    return;
 
+                    long packed = TimeStorage.writeTimestamp(mysqlDateTime);
+                    accumulator.ifPresent(a -> a.appendHash(Long.hashCode(packed)));
+                    return;
                 }
 
                 default:
@@ -1012,6 +1085,7 @@ public class XResultUtil {
             // for set type
             byte[] bytesVal = vals.toString().getBytes(CharsetMapping.getJavaEncodingForMysqlCharset(targetCharset));
             ((BytesColumnVector) columnVector).setVal(rowNumber, bytesVal);
+            accumulator.ifPresent(a -> a.appendBytes(bytesVal, 0, bytesVal.length));
             return;
         }
 
@@ -1036,15 +1110,19 @@ public class XResultUtil {
                 isUtf8 = false;
             }
 
-            if (null == mysqlCharset || mysqlCharset.equalsIgnoreCase(targetCharset) || (isUtf8 && isUtf8(targetCharset))) {
+            byte[] rawBytes = stream.readRawBytes(data.size() - 1);
+            if (null == mysqlCharset || mysqlCharset.equalsIgnoreCase(targetCharset) || (isUtf8 && isUtf8(
+                targetCharset))) {
                 // Direct copy.
-                ((BytesColumnVector) columnVector).setVal(rowNumber, stream.readRawBytes(data.size() - 1));
+                ((BytesColumnVector) columnVector).setVal(rowNumber, rawBytes);
+                accumulator.ifPresent(a -> a.appendBytes(rawBytes, 0, rawBytes.length));
                 return;
             }
-            byte[] bytesVal = new String(stream.readRawBytes(data.size() - 1), encoding)
+            byte[] bytesVal = new String(rawBytes, encoding)
                 .getBytes(CharsetMapping.getJavaEncodingForMysqlCharset(targetCharset));
             ((BytesColumnVector) columnVector).setVal(rowNumber, bytesVal);
-            return ;
+            accumulator.ifPresent(a -> a.appendBytes(bytesVal, 0, bytesVal.length));
+            return;
         }
 
         case BIT: {
@@ -1054,7 +1132,10 @@ public class XResultUtil {
             buf.flip();
             buf.position(Long.BYTES - bytesLen);
             buf.get(bytes);
-            ((LongColumnVector) columnVector).vector[rowNumber] = bytesToLong(bytes);
+            long longVal = bytesToLong(bytes);
+            ((LongColumnVector) columnVector).vector[rowNumber] = longVal;
+            accumulator.ifPresent(a -> a.appendHash(Long.hashCode(longVal)));
+
             return;
         }
 
@@ -1087,11 +1168,11 @@ public class XResultUtil {
             case 0xc:
             case 0xe:
             case 0xf:
-                unscaledString.put(0, (byte)'+');
+                unscaledString.put(0, (byte) '+');
                 break;
             case 0xb:
             case 0xd:
-                unscaledString.put(0, (byte)'-');
+                unscaledString.put(0, (byte) '-');
                 break;
             }
             // may have filled the CharBuffer or one remaining. need to remove it before toString()
@@ -1112,6 +1193,10 @@ public class XResultUtil {
 
             // convert latin1 to utf8
             ((BytesColumnVector) columnVector).setVal(rowNumber, MySQLUnicodeUtils.latin1ToUtf8(result).getBytes());
+
+            // handle checksum
+            accumulator.ifPresent(a -> a.appendHash(
+                RawBytesDecimalUtils.hashCode(dec.getDecimalMemorySegment())));
             return;
         }
 
@@ -1166,7 +1251,7 @@ public class XResultUtil {
         assert bytes.length <= 8;
         long val = 0;
         for (int i = 0; i < bytes.length; i++) {
-            val |= ((long)(bytes[i] & 0xFF)) << ((bytes.length - i - 1) * 8);
+            val |= ((long) (bytes[i] & 0xFF)) << ((bytes.length - i - 1) * 8);
         }
         return val;
     }

@@ -51,6 +51,7 @@ import java.util.TimeZone;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
@@ -110,6 +111,8 @@ public class XClient implements AutoCloseable {
     }
 
     private volatile ClientState state = ClientState.Initializing;
+
+    private final AtomicInteger probeFailTimes = new AtomicInteger(0);
 
     public XClient(NIOWorker nioWorker, XClientPool pool, BiFunction<XClient, XPacket, Boolean> filter,
                    long connectTimeoutNanos) {
@@ -759,11 +762,15 @@ public class XClient implements AutoCloseable {
                     TimeZone.getDefault()).getKey();
                 count += res.longValue();
             }
-            return 1 == count;
+            if (1 == count) {
+                probeFailTimes.set(0);
+                return true;
+            }
+            return probeFailTimes.addAndGet(1) < XConfig.DEFAULT_PROBE_RETRY_TIMES;
         } catch (Throwable t) {
             XLog.XLogLogger.error(t); // Just log and ignore.
         }
-        return false;
+        return probeFailTimes.addAndGet(1) < XConfig.DEFAULT_PROBE_RETRY_TIMES;
     }
 
     @Override

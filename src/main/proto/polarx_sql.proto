@@ -46,14 +46,14 @@ import "polarx_datatypes.proto";
 // :returns:
 //    * zero or one :protobuf:msg:`Polarx.Resultset::` followed by :protobuf:msg:`Polarx.Sql::StmtExecuteOk`
 message StmtExecute {
-  optional string namespace = 3 [default = "sql"];
+  optional string namespace = 3 [ default = "sql" ];
   optional bytes stmt = 1;
   optional bytes stmt_digest = 12;
   optional bytes hint = 13;
   optional bool chunk_result = 14 [default = false];
   optional bool feed_back = 16 [default = false];
   repeated Polarx.Datatypes.Any args = 2;
-  optional bool compact_metadata = 4 [default = false];
+  optional bool compact_metadata = 4 [ default = false ];
 
   // For auto commit request.
   optional string schema_name = 5;
@@ -67,12 +67,48 @@ message StmtExecute {
   optional bool use_cts_transaction = 15;
 }
 
+message GalaxyPrepareTableData {
+  required int32 table_index = 1;
+  optional bytes db_name = 2;
+  required bytes table_name = 3;
+}
+
+message GalaxyPrepareExecute {
+  optional bytes stmt = 1;
+  optional bytes stmt_digest = 2;
+  optional bytes hint = 3;
+  repeated GalaxyPrepareTableData tables = 4;
+  optional bytes param = 5; // Encoded param without table names.
+  optional int32 param_num = 17; // for mysql 5.7
+  optional bool compact_metadata = 6 [default = false];
+
+  // Extra info.
+  optional string db_name = 7;
+  repeated Polarx.Datatypes.SessionVariable session_variables = 8;
+  optional string encoding = 9;
+  optional int32 token = 10;
+  optional bool reset_error = 11;
+
+  // Trx.
+  optional uint64 snapshot_seq = 12;
+  optional uint64 commit_seq = 13;
+  optional bool use_cts_transaction = 14;
+
+  // Result set extra.
+  enum ResultSetType {
+    ROW = 1;
+    CHUNK_V1 = 2;
+  };
+  optional ResultSetType result_set_type = 15 [default = ROW];
+  optional bool feed_back = 16 [default = false];
+}
+
 // statement executed successful
 message StmtExecuteOk {
 }
 
 message TokenOffer {
-  optional int32 token = 1 [default = -1];
+  optional int32 token = 1 [ default = -1];
 }
 
 

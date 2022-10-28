@@ -39,6 +39,7 @@ public class XConfig {
 
     public final static long MAX_QUEUED_BATCH_REQUEST = 64;
 
+    public final static int DEFAULT_PROBE_RETRY_TIMES = 5;
     public final static long DEFAULT_PROBE_TIMEOUT_NANOS = 5000 * 1000000L; // 5s
     public final static long DEFAULT_GET_CONN_TIMEOUT_NANOS = 5000 * 1000000L; // 5s
     public final static long DEFAULT_TIMEOUT_NANOS = 900 * 1000 * 1000000L; // 900s
@@ -70,5 +71,6 @@ public class XConfig {
 
     public final static boolean VIP_WITH_X_PROTOCOL = false;
 
-    public static boolean GALAXY_X_PROTOCOL = false;
+    public static boolean GALAXY_X_PROTOCOL = true;
+    public static boolean OPEN_XRPC_PROTOCOL = false;
 }

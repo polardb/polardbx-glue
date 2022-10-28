@@ -17,6 +17,8 @@
 package com.alibaba.polardbx.rpc.pool;
 
 import com.alibaba.polardbx.common.exception.NotSupportException;
+import com.alibaba.polardbx.common.jdbc.BytesSql;
+import com.alibaba.polardbx.rpc.GalaxyPrepare.GPTable;
 import com.alibaba.polardbx.rpc.XConfig;
 import com.alibaba.polardbx.rpc.XLog;
 import com.alibaba.polardbx.rpc.client.XClient;
@@ -92,6 +94,7 @@ public class XConnection implements AutoCloseable, Connection {
             sessionLock.readLock().lock();
             try {
                 session.setAutoCommit(this, true);
+                session.refereshConnetionId(this); // only query once
             } finally {
                 sessionLock.readLock().unlock();
             }
@@ -117,7 +120,7 @@ public class XConnection implements AutoCloseable, Connection {
                     // Transaction safety insurance.
                     if (!session.isAutoCommit()) {
                         // Rollback in case of any uncommitted trx.
-                        session.execUpdate(this, "rollback", null, true, null);
+                        session.execUpdate(this, BytesSql.getBytesSql("rollback"), null, null, true, null);
                     }
                     session.flushIgnorable(this);
                     final XResult lastRequest = session.getLastRequest();
@@ -262,7 +265,7 @@ public class XConnection implements AutoCloseable, Connection {
         session.setLazyCommitSeq(lazyCommitSeq);
     }
 
-    public XResult execQuery(PolarxExecPlan.ExecPlan.Builder execPlan, String nativeSql)
+    public XResult execQuery(PolarxExecPlan.ExecPlan.Builder execPlan, BytesSql nativeSql)
         throws SQLException {
         sessionLock.readLock().lock();
         try {
@@ -273,7 +276,7 @@ public class XConnection implements AutoCloseable, Connection {
         }
     }
 
-    public XResult execQuery(PolarxExecPlan.ExecPlan.Builder execPlan, String nativeSql,
+    public XResult execQuery(PolarxExecPlan.ExecPlan.Builder execPlan, BytesSql nativeSql,
                              boolean ignoreResult) throws SQLException {
         sessionLock.readLock().lock();
         try {
@@ -288,7 +291,7 @@ public class XConnection implements AutoCloseable, Connection {
         sessionLock.readLock().lock();
         try {
             check();
-            return session.execQuery(this, sql, null, false, null);
+            return session.execQuery(this, BytesSql.getBytesSql(sql), null, null, false, null);
         } finally {
             sessionLock.readLock().unlock();
         }
@@ -298,7 +301,17 @@ public class XConnection implements AutoCloseable, Connection {
         sessionLock.readLock().lock();
         try {
             check();
-            return session.execQuery(this, sql, args, false, null);
+            return session.execQuery(this, BytesSql.getBytesSql(sql), null, args, false, null);
+        } finally {
+            sessionLock.readLock().unlock();
+        }
+    }
+
+    public XResult execQuery(BytesSql sql, byte[] hint, List<PolarxDatatypes.Any> args) throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            return session.execQuery(this, sql, hint, args, false, null);
         } finally {
             sessionLock.readLock().unlock();
         }
@@ -309,19 +322,32 @@ public class XConnection implements AutoCloseable, Connection {
         sessionLock.readLock().lock();
         try {
             check();
-            return session.execQuery(this, sql, args, ignoreResult, null);
+            return session.execQuery(this, BytesSql.getBytesSql(sql), null, args, ignoreResult, null);
         } finally {
             sessionLock.readLock().unlock();
         }
     }
 
-    public XResult execQuery(String sql, List<PolarxDatatypes.Any> args, boolean ignoreResult,
+    public XResult execQuery(BytesSql sql, byte[] hint, List<PolarxDatatypes.Any> args, boolean ignoreResult,
                              ByteString digest)
         throws SQLException {
         sessionLock.readLock().lock();
         try {
             check();
-            return session.execQuery(this, sql, args, ignoreResult, digest);
+            return session.execQuery(this, sql, hint, args, ignoreResult, digest);
+        } finally {
+            sessionLock.readLock().unlock();
+        }
+    }
+
+    // Go with galaxy prepare.
+    public XResult execGalaxyPrepare(BytesSql sql, byte[] hint, ByteString digest, List<GPTable> tables,
+                                     ByteString params, int paramNum, boolean ignoreResult, boolean isUpdate)
+        throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            return session.execGalaxyPrepare(this, sql, hint, digest, tables, params, paramNum, ignoreResult, isUpdate);
         } finally {
             sessionLock.readLock().unlock();
         }
@@ -331,7 +357,7 @@ public class XConnection implements AutoCloseable, Connection {
         sessionLock.readLock().lock();
         try {
             check();
-            return session.execUpdate(this, sql, null, false, null).getRowsAffected();
+            return session.execUpdate(this, BytesSql.getBytesSql(sql), null, null, false, null).getRowsAffected();
         } finally {
             sessionLock.readLock().unlock();
         }
@@ -341,7 +367,17 @@ public class XConnection implements AutoCloseable, Connection {
         sessionLock.readLock().lock();
         try {
             check();
-            return session.execUpdate(this, sql, args, false, null).getRowsAffected();
+            return session.execUpdate(this, BytesSql.getBytesSql(sql), null, args, false, null).getRowsAffected();
+        } finally {
+            sessionLock.readLock().unlock();
+        }
+    }
+
+    public long execUpdate(BytesSql sql, byte[] hint, List<PolarxDatatypes.Any> args) throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            return session.execUpdate(this, sql, hint, args, false, null).getRowsAffected();
         } finally {
             sessionLock.readLock().unlock();
         }
@@ -352,30 +388,64 @@ public class XConnection implements AutoCloseable, Connection {
         sessionLock.readLock().lock();
         try {
             check();
-            return session.execUpdate(this, sql, args, ignoreResult, null);
+            return session.execUpdate(this, BytesSql.getBytesSql(sql), null, args, ignoreResult, null);
         } finally {
             sessionLock.readLock().unlock();
         }
     }
 
-    public XResult execUpdate(String sql, List<PolarxDatatypes.Any> args, boolean ignoreResult,
+    public XResult execUpdate(BytesSql sql, byte[] hint, List<PolarxDatatypes.Any> args, boolean ignoreResult)
+        throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            return session.execUpdate(this, sql, hint, args, ignoreResult, null);
+        } finally {
+            sessionLock.readLock().unlock();
+        }
+    }
+
+    public XResult execUpdate(String sql, byte[] hint, List<PolarxDatatypes.Any> args, boolean ignoreResult,
                               ByteString digest)
         throws SQLException {
         sessionLock.readLock().lock();
         try {
             check();
-            return session.execUpdate(this, sql, args, ignoreResult, digest);
+            return session.execUpdate(this, BytesSql.getBytesSql(sql), hint, args, ignoreResult, digest);
         } finally {
             sessionLock.readLock().unlock();
         }
     }
 
-    public XResult execUpdateReturning(String sql, List<PolarxDatatypes.Any> args, String returning)
+    public XResult execUpdate(BytesSql sql, byte[] hint, List<PolarxDatatypes.Any> args, boolean ignoreResult,
+                              ByteString digest)
         throws SQLException {
         sessionLock.readLock().lock();
         try {
             check();
-            return session.execQuery(this, sql, args, false, null, returning);
+            return session.execUpdate(this, sql, hint, args, ignoreResult, digest);
+        } finally {
+            sessionLock.readLock().unlock();
+        }
+    }
+
+    public XResult execUpdateReturning(String sql, byte[] hint, List<PolarxDatatypes.Any> args, String returning)
+        throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            return session.execQuery(this, BytesSql.getBytesSql(sql), hint, args, false, null, returning);
+        } finally {
+            sessionLock.readLock().unlock();
+        }
+    }
+
+    public XResult execUpdateReturning(BytesSql sql, byte[] hint, List<PolarxDatatypes.Any> args, String returning)
+        throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            return session.execQuery(this, sql, hint, args, false, null, returning);
         } finally {
             sessionLock.readLock().unlock();
         }
@@ -421,11 +491,21 @@ public class XConnection implements AutoCloseable, Connection {
         }
     }
 
+    public boolean supportRawString() throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            return session.supportRawString();
+        } finally {
+            sessionLock.readLock().unlock();
+        }
+    }
+
     public long getConnectionId() throws SQLException {
         sessionLock.readLock().lock();
         try {
             check();
-            return session.getConnectionId(this);
+            return session.getConnectionId();
         } finally {
             sessionLock.readLock().unlock();
         }
@@ -533,6 +613,10 @@ public class XConnection implements AutoCloseable, Connection {
     @Override
     public PreparedStatement prepareStatement(String sql) throws SQLException {
         return new XPreparedStatement(this, sql);
+    }
+
+    public PreparedStatement prepareStatement(BytesSql sql, byte[] hint) throws SQLException {
+        return new XPreparedStatement(this, sql, hint);
     }
 
     @Override
@@ -643,7 +727,7 @@ public class XConnection implements AutoCloseable, Connection {
             session.stashTransactionSequence();
             try {
                 // Set ignore is ok, drop connection when fail.
-                session.execUpdate(this, sql, null, true, null);
+                session.execUpdate(this, BytesSql.getBytesSql(sql), null, null, true, null);
                 session.updateIsolation(levelString);
             } finally {
                 session.stashPopTransactionSequence();

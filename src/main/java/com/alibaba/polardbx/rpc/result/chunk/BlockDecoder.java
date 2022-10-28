@@ -16,6 +16,7 @@
 
 package com.alibaba.polardbx.rpc.result.chunk;
 
+import java.util.List;
 import java.util.Set;
 
 public interface BlockDecoder {
@@ -46,7 +47,7 @@ public interface BlockDecoder {
 
     Decimal getDecimal() throws Exception;
 
-    Set<Slice> getSet() throws Exception;
+    List<Slice> getSet() throws Exception;
 
     Slice getString() throws Exception;
 }

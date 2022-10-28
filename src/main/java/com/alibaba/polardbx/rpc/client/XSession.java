@@ -19,8 +19,12 @@ package com.alibaba.polardbx.rpc.client;
 import com.alibaba.polardbx.common.constants.ServerVariables;
 import com.alibaba.polardbx.common.exception.TddlRuntimeException;
 import com.alibaba.polardbx.common.exception.code.ErrorCode;
+import com.alibaba.polardbx.common.jdbc.BytesSql;
 import com.alibaba.polardbx.common.utils.TStringUtil;
+import com.alibaba.polardbx.common.utils.logger.Logger;
+import com.alibaba.polardbx.common.utils.logger.LoggerFactory;
 import com.alibaba.polardbx.common.utils.logger.MDC;
+import com.alibaba.polardbx.rpc.GalaxyPrepare.GPTable;
 import com.alibaba.polardbx.rpc.XConfig;
 import com.alibaba.polardbx.rpc.XLog;
 import com.alibaba.polardbx.rpc.XUtil;
@@ -44,11 +48,12 @@ import com.mysql.cj.x.protobuf.PolarxDatatypes;
 import com.mysql.cj.x.protobuf.PolarxExecPlan;
 import org.apache.commons.lang.StringUtils;
 
-import java.io.UnsupportedEncodingException;
+import java.nio.charset.UnsupportedCharsetException;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -64,13 +69,14 @@ import java.util.stream.Collectors;
  * @version 1.0
  */
 public class XSession implements Comparable<XSession>, AutoCloseable {
+    private static final Logger LOGGER = LoggerFactory.getLogger(XSession.class);
 
     public static final AtomicInteger GLOBAL_COUNTER = new AtomicInteger(0);
+    public static final ByteString EXPLAIN_PRE = ByteString.copyFromUtf8("explain ");
 
     /**
      * Session identifier.
      */
-
     private final XClient client;
     private final long sessionId;
 
@@ -372,7 +378,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             item.setQueuedRequestDepth(request.getQueuedDepth());
 
             // Gather with queued sql.
-            StringBuilder sql = new StringBuilder(null == request.getSql() ? "" : request.getSql());
+            StringBuilder sql = new StringBuilder(null == request.getSql() ? "" : request.getSql().display());
             XResult prob = request;
             while ((prob = prob.getPrevious()) != null) {
                 sql.insert(0, (null == prob.getSql() ? ";" : (prob.getSql() + ";")));
@@ -419,8 +425,9 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             if (needSet) {
                 stashTransactionSequence();
                 try {
-                    execUpdate(connection, enableAutoCommit ? "SET autocommit=1" : "SET autocommit=0",
-                        null, true, null);
+                    execUpdate(connection,
+                        BytesSql.getBytesSql(enableAutoCommit ? "SET autocommit=1" : "SET autocommit=0"), null, null,
+                        true, null);
                 } finally {
                     stashPopTransactionSequence();
                 }
@@ -467,6 +474,10 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
     }
 
     public synchronized String getRequestEncodingMySQL() {
+        // Caution: we may set names before actual sql request, so get target encoding if exists
+        if (defaultEncodingMySQL != null) {
+            return defaultEncodingMySQL;
+        }
         if (null == characterSetClient) {
             Map<String, Object> variables = null == sessionVariables ? client.getGlobalVariablesL() : sessionVariables;
             if (null == variables) {
@@ -610,10 +621,6 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             if (sessionVariables == null) {
                 sessionVariables = new HashMap<>(client.getSessionVariablesL());
             }
-        } else {
-            if (globalVariables == null) {
-                globalVariables = new HashMap<>(client.getGlobalVariablesL());
-            }
         }
 
         Map<String, Object> serverVariables = null;
@@ -694,7 +701,13 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             }
 
             String newValueStr = String.valueOf(newValue);
-            Object oldValue = isGlobal ? this.globalVariables.get(key) : this.sessionVariables.get(key);
+            Object oldValue;
+            if (!isGlobal) {
+                oldValue = this.sessionVariables.get(key);
+            } else {
+                oldValue = this.globalVariables == null ? this.client.getGlobalVariablesL().get(key) :
+                    this.globalVariables.get(key);
+            }
             if (oldValue != null) {
                 String oldValuesStr = String.valueOf(oldValue);
                 if (TStringUtil.equalsIgnoreCase(newValueStr, oldValuesStr)) {
@@ -770,7 +783,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             stashTransactionSequence();
             try {
                 // This can ignore, because we treat ignorable error as fatal.
-                execUpdate(connection, query.toString(), args, true, null);
+                execUpdate(connection, BytesSql.getBytesSql(query.toString()), null, args, true, null);
             } finally {
                 stashPopTransactionSequence();
             }
@@ -783,6 +796,9 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                     sessionVariablesChanged.put(e.getKey(), e.getValue());
                 }
             } else {
+                if (globalVariables == null && !tmpVariablesChanged.isEmpty()) {
+                    globalVariables = new HashMap<>(client.getGlobalVariablesL());
+                }
                 for (Map.Entry<String, Object> e : tmpVariablesChanged.entrySet()) {
                     globalVariables.put(e.getKey(), e.getValue());
                 }
@@ -810,7 +826,8 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                 stashTransactionSequence();
                 try {
                     // This can ignore, because we treat ignorable error as fatal.
-                    execUpdate(connection, "set names `" + copy + "`", null, true, null);
+                    execUpdate(connection, BytesSql.getBytesSql("set names `" + copy + "`"), null, null, true,
+                        null);
                 } finally {
                     stashPopTransactionSequence();
                 }
@@ -865,28 +882,32 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
         client.flush();
     }
 
-    public synchronized void flushIgnorable(XConnection connection) throws SQLException {
-        if (XConfig.GALAXY_X_PROTOCOL && lastIgnore) {
-            // Finish expectations.
-            try {
-                final long startNanos = System.nanoTime();
-                client.send(new XPacket(sessionId, Polarx.ClientMessages.Type.EXPECT_CLOSE_VALUE,
-                    PolarxExpect.Close.newBuilder().build()), true);
-                lastRequest = new XResult(connection, packetQueue, lastRequest,
-                    startNanos, startNanos + connection.actualTimeoutNanos(),
-                    startNanos + XConfig.DEFAULT_TOTAL_TIMEOUT_NANOS,
-                    true, XResult.RequestType.EXPECTATIONS, "expect_close",
-                    connection.getDefaultTokenCount(), null, null);
-                lastIgnore = false;
-            } catch (Throwable e) {
-                XLog.XLogLogger.error(this + " failed to close expect.");
-                XLog.XLogLogger.error(lastException = e); // This is fatal error and should never happen.
+    public void flushIgnorable(XConnection connection) throws SQLException {
+        final XResult req;
+        synchronized (this) {
+            if (XConfig.GALAXY_X_PROTOCOL && lastIgnore) {
+                // Finish expectations.
+                try {
+                    final long startNanos = System.nanoTime();
+                    client.send(new XPacket(sessionId, Polarx.ClientMessages.Type.EXPECT_CLOSE_VALUE,
+                        PolarxExpect.Close.newBuilder().build()), true);
+                    lastRequest = new XResult(connection, packetQueue, lastRequest,
+                        startNanos, startNanos + connection.actualTimeoutNanos(),
+                        startNanos + XConfig.DEFAULT_TOTAL_TIMEOUT_NANOS,
+                        true, XResult.RequestType.EXPECTATIONS, BytesSql.getBytesSql("expect_close"),
+                        connection.getDefaultTokenCount(), null, null);
+                    lastIgnore = false;
+                } catch (Throwable e) {
+                    XLog.XLogLogger.error(this + " failed to close expect.");
+                    XLog.XLogLogger.error(lastException = e); // This is fatal error and should never happen.
+                }
             }
+            req = lastRequest;
         }
-        if (lastRequest != null && lastRequest.isIgnorableNotFinish()) {
+        if (req != null && req.isIgnorableNotFinish()) {
             client.flush();
             try {
-                lastRequest.waitFinish(true);
+                req.waitFinish(true);
             } catch (Throwable e) {
                 XLog.XLogLogger.error(this + " failed to flush ignorable.");
                 XLog.XLogLogger.error(lastException = e); // This is fatal error and should never happen.
@@ -946,6 +967,10 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             return; // Ignore inactive session.
         }
         try {
+            if (XLog.XProtocolLogger.isDebugEnabled()) {
+                historySql.add("cancel query");
+                sessionSql.add("cancel query");
+            }
             final XPacket packet =
                 new XPacket(sessionId, Polarx.ClientMessages.Type.SESS_KILL_VALUE,
                     PolarxSession.KillSession.newBuilder()
@@ -1015,6 +1040,10 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             return; // Ignore inactive session.
         }
         try {
+            if (XLog.XProtocolLogger.isDebugEnabled()) {
+                historySql.add("kill query");
+                sessionSql.add("kill query");
+            }
             final XPacket packet =
                 new XPacket(sessionId, Polarx.ClientMessages.Type.SESS_KILL_VALUE,
                     PolarxSession.KillSession.newBuilder()
@@ -1113,7 +1142,10 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                             Polarx.ServerMessages.Type.RESULTSET_TOKEN_DONE_VALUE == packet.getType() ||
                             Polarx.ServerMessages.Type.RESULTSET_FETCH_DONE_VALUE == packet.getType() ||
                             Polarx.ServerMessages.Type.ERROR_VALUE == packet.getType() ||
-                            Polarx.ServerMessages.Type.RESULTSET_FETCH_DONE_MORE_RESULTSETS_VALUE == packet.getType()) {
+                            Polarx.ServerMessages.Type.RESULTSET_FETCH_DONE_MORE_RESULTSETS_VALUE == packet.getType() ||
+                            // Special case that isDataReady may consume till RESULTSET_FETCH_DONE_VALUE,
+                            // and we still need notify when exec ok occurs.
+                            Polarx.ServerMessages.Type.SQL_STMT_EXECUTE_OK_VALUE == packet.getType()) {
                             gotData = true;
                             break;
                         }
@@ -1223,7 +1255,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
     }
 
     // Should invoke in synchronized function.
-    private XResult getResultSet(XConnection connection, long startNanos, boolean ignoreResult, String sql,
+    private XResult getResultSet(XConnection connection, long startNanos, boolean ignoreResult, BytesSql sql,
                                  XPacketBuilder retransmit, XResult.RequestType requestType, String extra)
         throws SQLException {
         lastUserRequest = lastRequest = new XResult(connection, packetQueue, lastRequest,
@@ -1250,7 +1282,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                 lastRequest = new XResult(connection, packetQueue, lastRequest,
                     startNanos, startNanos + connection.actualTimeoutNanos(),
                     startNanos + XConfig.DEFAULT_TOTAL_TIMEOUT_NANOS,
-                    true, XResult.RequestType.EXPECTATIONS, "expect([+no_error])",
+                    true, XResult.RequestType.EXPECTATIONS, BytesSql.getBytesSql("expect([+no_error])"),
                     connection.getDefaultTokenCount(), null, null);
                 lastIgnore = true;
             }
@@ -1271,7 +1303,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
     }
 
     public synchronized XResult execQuery(XConnection connection, PolarxExecPlan.ExecPlan.Builder execPlan,
-                                          String nativeSql, boolean ignoreResult) throws SQLException {
+                                          BytesSql nativeSql, boolean ignoreResult) throws SQLException {
         if (XConfig.GALAXY_X_PROTOCOL) {
             throw new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_SESSION, "Plan trans not supported in galaxy.");
         }
@@ -1366,7 +1398,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                 lastRequest = new XResult(connection, packetQueue, lastRequest,
                     startNanos, startNanos + connection.actualTimeoutNanos(),
                     startNanos + XConfig.DEFAULT_TOTAL_TIMEOUT_NANOS,
-                    true, XResult.RequestType.EXPECTATIONS, "expect_close",
+                    true, XResult.RequestType.EXPECTATIONS, BytesSql.getBytesSql("expect_close"),
                     connection.getDefaultTokenCount(), null, null);
             }
         } catch (Throwable t) {
@@ -1380,41 +1412,39 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
         return ignoreResult ? null : result;
     }
 
-    public XResult execQuery(XConnection connection, String sql, List<PolarxDatatypes.Any> args,
-                             boolean ignoreResult, ByteString digest) throws SQLException {
-        return execQuery(connection, sql, args, ignoreResult, digest, null);
-    }
-
-    public synchronized XResult execQuery(XConnection connection, String sql, List<PolarxDatatypes.Any> args,
-                                          boolean ignoreResult, ByteString digest, String returning)
-        throws SQLException {
-        if (returning != null && XConfig.GALAXY_X_PROTOCOL) {
-            throw new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_SESSION, "Returning not supported in galaxy.");
-        }
-
+    private void execPreDealing(XConnection connection, BytesSql sql, boolean isUpdate) throws SQLException {
         if (XConnectionManager.getInstance().isEnableTrxLeakCheck()) {
-            if (StringUtils.containsIgnoreCase(sql, "XA START ") ||
-                StringUtils.containsIgnoreCase(sql, "XA PREPARE ")) {
-                xaStatus = sql;
-            } else if (StringUtils.containsIgnoreCase(sql, "XA ROLLBACK ") ||
-                StringUtils.containsIgnoreCase(sql, "XA COMMIT ")) {
+            String tempSql = sql.toString();
+            if (StringUtils.containsIgnoreCase(tempSql, "XA START ") ||
+                StringUtils.containsIgnoreCase(tempSql, "XA PREPARE ")) {
+                xaStatus = tempSql;
+            } else if (StringUtils.containsIgnoreCase(tempSql, "XA ROLLBACK ") ||
+                StringUtils.containsIgnoreCase(tempSql, "XA COMMIT ")) {
                 xaStatus = null;
-            } else if (sql.equalsIgnoreCase("begin") ||
-                StringUtils.containsIgnoreCase(sql, "*/begin") ||
-                StringUtils.containsIgnoreCase(sql, "START TRANSACTION")) {
+            } else if (tempSql.equalsIgnoreCase("begin") ||
+                StringUtils.containsIgnoreCase(tempSql, "*/begin") ||
+                StringUtils.containsIgnoreCase(tempSql, "START TRANSACTION")) {
                 transactionStatus = true;
-            } else if (sql.equalsIgnoreCase("rollback") || sql.equalsIgnoreCase("commit") ||
-                StringUtils.containsIgnoreCase(sql, "*/rollback") ||
-                StringUtils.containsIgnoreCase(sql, "*/commit")) {
+            } else if (tempSql.equalsIgnoreCase("rollback") || tempSql.equalsIgnoreCase("commit") ||
+                StringUtils.containsIgnoreCase(tempSql, "*/rollback") ||
+                StringUtils.containsIgnoreCase(tempSql, "*/commit")) {
                 transactionStatus = false;
             }
         }
 
         final XDataSource dataSource = connection.getDataSource();
         if (dataSource != null) {
-            dataSource.getQueryCount().getAndIncrement();
+            if (isUpdate) {
+                dataSource.getUpdateCount().getAndIncrement();
+            } else {
+                dataSource.getQueryCount().getAndIncrement();
+            }
         }
-        perfCollection.getQueryCount().getAndIncrement();
+        if (isUpdate) {
+            perfCollection.getUpdateCount().getAndIncrement();
+        } else {
+            perfCollection.getQueryCount().getAndIncrement();
+        }
 
         initForRequest();
         applyDefaultEncodingMySQL(connection);
@@ -1422,8 +1452,30 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
         if (XLog.XProtocolLogger.isDebugEnabled()) {
             traceCtsInfo();
 
-            historySql.add(sql);
-            sessionSql.add(sql);
+            historySql.add(sql.toString());
+            sessionSql.add(sql.toString());
+        }
+    }
+
+    public XResult execQuery(XConnection connection, BytesSql sql, byte[] hint, List<PolarxDatatypes.Any> args,
+                             boolean ignoreResult, ByteString digest) throws SQLException {
+        return execQuery(connection, sql, hint, args, ignoreResult, digest, null);
+    }
+
+    public synchronized XResult execQuery(XConnection connection, BytesSql sql, byte[] hint,
+                                          List<PolarxDatatypes.Any> args,
+                                          boolean ignoreResult, ByteString digest, String returning)
+        throws SQLException {
+        if (returning != null && XConfig.GALAXY_X_PROTOCOL) {
+            throw new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_SESSION, "Returning not supported in galaxy.");
+        }
+
+        execPreDealing(connection, sql, false);
+
+        // handle explain
+        boolean explain = isExplain(hint);
+        if (explain) {
+            hint = Arrays.copyOfRange(hint, 8, hint.length);
         }
 
         // Send request.
@@ -1433,22 +1485,13 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
         boolean setStmt = true;
         // Dealing cache.
         if (!ignoreResult && !noCache && digest != null && supportPlanCache()) {
-            // Only query with no ignore can go the cache.
-            final String traceId;
-            if (sql.startsWith("/*DRDS")) {
-                final int endIdx = sql.indexOf("*/", 6) + 2;
-                traceId = returningHint + sql.substring(0, endIdx);
-                sql = sql.substring(endIdx);
-            } else {
-                traceId = returningHint;
-            }
-
             // Always use cache.
             setStmt = false;
             builder.setStmtDigest(digest);
-            if (traceId != null) {
-                builder.setHint(ByteString.copyFromUtf8(traceId));
+            if (hint != null) {
+                builder.setHint(ByteString.copyFrom(hint));
             }
+            final XDataSource dataSource = connection.getDataSource();
             if (dataSource != null) {
                 dataSource.getCacheSqlQuery().getAndIncrement();
             }
@@ -1459,8 +1502,19 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
         String extra = null;
         if (setStmt) {
             try {
-                builder.setStmt(ByteString.copyFrom(sql, toJavaEncoding(getRequestEncodingMySQL())));
-            } catch (UnsupportedEncodingException e) {
+                if (explain && !isExplain(sql.getBytes())) {
+                    builder.setStmt(EXPLAIN_PRE.concat(sql.byteString(toJavaEncoding(getRequestEncodingMySQL()))));
+                } else {
+                    if ((builder.getStmtDigest() == null || builder.getStmtDigest().isEmpty()) && hint != null) {
+                        // digest is null meaning it's the first interview for this sql
+                        // hint ntb added in the front of sql
+                        builder.setStmt(ByteString.copyFrom(hint)
+                            .concat(sql.byteString(toJavaEncoding(getRequestEncodingMySQL()))));
+                    } else {
+                        builder.setStmt(sql.byteString(toJavaEncoding(getRequestEncodingMySQL())));
+                    }
+                }
+            } catch (UnsupportedCharsetException e) {
                 XLog.XLogLogger.error(e);
                 throw new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_CONNECTION, e.getMessage());
             }
@@ -1531,13 +1585,13 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             } else {
                 retransmit = null;
             }
-            result = getResultSet(
-                connection, startNanos, ignoreResult, sql, retransmit, XResult.RequestType.SQL_QUERY, extra);
+            result = getResultSet(connection, startNanos, ignoreResult, sql, retransmit, XResult.RequestType.SQL_QUERY,
+                extra);
             if (postOp) {
                 lastRequest = new XResult(connection, packetQueue, lastRequest,
                     startNanos, startNanos + connection.actualTimeoutNanos(),
                     startNanos + XConfig.DEFAULT_TOTAL_TIMEOUT_NANOS,
-                    true, XResult.RequestType.EXPECTATIONS, "expect_close",
+                    true, XResult.RequestType.EXPECTATIONS, BytesSql.getBytesSql("expect_close"),
                     connection.getDefaultTokenCount(), null, null);
             }
         } catch (Throwable t) {
@@ -1551,45 +1605,158 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
         return ignoreResult ? null : result;
     }
 
+    private boolean isExplain(byte[] hint) {
+        if (hint == null || hint.length < 8) {
+            return false;
+        }
+        return hint[0] == 101 && hint[1] == 120 && hint[2] == 112 && hint[3] == 108 && hint[4] == 97 && hint[5] == 105
+            && hint[6] == 110 && hint[7] == 32;
+    }
+
+    public synchronized XResult execGalaxyPrepare(
+        XConnection connection, BytesSql sql, byte[] hint, ByteString digest, List<GPTable> tables, ByteString params,
+        int paramNum, boolean ignoreResult, boolean isUpdate) throws SQLException {
+        execPreDealing(connection, sql, isUpdate);
+
+        assert !isExplain(hint); // explain with galaxy prepare is not allowed
+
+        // Send request.
+        final PolarxSql.GalaxyPrepareExecute.Builder builder = PolarxSql.GalaxyPrepareExecute.newBuilder();
+
+        final ByteString extraPrefix = 0 == tables.size() ? ByteString.copyFromUtf8("/*" + lastDB + "*/") : null;
+        final boolean setStmt;
+        if (!noCache && digest != null && supportPlanCache()) {
+            // Always use cache.
+            setStmt = false;
+            builder.setStmtDigest(digest);
+        } else {
+            setStmt = true;
+            try {
+                final String encoding = toJavaEncoding(getRequestEncodingMySQL());
+                builder.setStmt(
+                    null == extraPrefix ? sql.byteString(encoding) : extraPrefix.concat(sql.byteString(encoding)));
+            } catch (UnsupportedCharsetException e) {
+                XLog.XLogLogger.error(e);
+                throw new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_CONNECTION, e.getMessage());
+            }
+        }
+
+        // always set hint
+        if (hint != null) {
+            builder.setHint(ByteString.copyFrom(hint));
+        }
+
+        // Set fields.
+        if (tables != null && !tables.isEmpty()) {
+            final PolarxSql.GalaxyPrepareTableData.Builder tableBuilder = PolarxSql.GalaxyPrepareTableData.newBuilder();
+            for (GPTable tableData : tables) {
+                tableBuilder.setTableIndex(tableData.getTableParamIndex());
+                tableBuilder.setTableName(ByteString.copyFromUtf8(tableData.getTableName()));
+                builder.addTables(tableBuilder);
+            }
+        }
+        if (params != null && !params.isEmpty()) {
+            builder.setParam(params);
+            builder.setParamNum(paramNum);
+        }
+        if (connection.isCompactMetadata()) {
+            builder.setCompactMetadata(true);
+        }
+        if (lazyUseDB != null) {
+            builder.setDbName(lazyUseDB);
+            lazyUseDB = null;
+        }
+        if (!XConfig.GALAXY_X_PROTOCOL) {
+            builder.setResetError(!lastIgnore);
+        }
+        builder.setToken(connection.getDefaultTokenCount());
+        String extra = null;
+        if (lazyUseCtsTransaction) {
+            builder.setUseCtsTransaction(true);
+            if (null == extra) {
+                extra = "use_cts;";
+            } else {
+                extra += "use_cts;";
+            }
+            lazyUseCtsTransaction = false;
+        }
+        if (lazySnapshotSeq != -1) {
+            builder.setSnapshotSeq(lazySnapshotSeq);
+            if (null == extra) {
+                extra = "snapshot=" + lazySnapshotSeq + ";";
+            } else {
+                extra += "snapshot=" + lazySnapshotSeq + ";";
+            }
+            lazySnapshotSeq = -1;
+        }
+        if (lazyCommitSeq != -1) {
+            builder.setCommitSeq(lazyCommitSeq);
+            if (null == extra) {
+                extra = "commit=" + lazyCommitSeq + ";";
+            } else {
+                extra += "commit=" + lazyCommitSeq + ";";
+            }
+            lazyCommitSeq = -1;
+        }
+        if (chunkResult && supportChunkResult()) {
+            builder.setResultSetType(PolarxSql.GalaxyPrepareExecute.ResultSetType.CHUNK_V1);
+        }
+        if (connection.isWithFeedback() && supportFeedback()) {
+            builder.setFeedBack(true);
+        }
+
+        if (!XConfig.GALAXY_X_PROTOCOL) {
+            lastIgnore = ignoreResult;
+        }
+        final XPacket packet =
+            new XPacket(sessionId, Polarx.ClientMessages.Type.GALAXY_PREPARE_EXECUTE_VALUE, builder.build());
+        final XResult result;
+        try {
+            final long startNanos = System.nanoTime();
+            final boolean postOp = send_internal(connection, packet, ignoreResult);
+            if (!ignoreResult) {
+                addActive();
+            }
+            final XPacketBuilder retransmit;
+            if (!setStmt && !forceCache) {
+                retransmit =
+                    new XPacketBuilder(sessionId, builder, sql, toJavaEncoding(getRequestEncodingMySQL()), extraPrefix);
+            } else {
+                retransmit = null;
+            }
+            result = getResultSet(
+                connection, startNanos, ignoreResult, sql, retransmit, XResult.RequestType.SQL_PREPARE_EXECUTE, extra);
+            if (postOp) {
+                lastRequest = new XResult(connection, packetQueue, lastRequest,
+                    startNanos, startNanos + connection.actualTimeoutNanos(),
+                    startNanos + XConfig.DEFAULT_TOTAL_TIMEOUT_NANOS,
+                    true, XResult.RequestType.EXPECTATIONS, BytesSql.getBytesSql("expect_close"),
+                    connection.getDefaultTokenCount(), null, null);
+            }
+        } catch (Throwable t) {
+            lastException = t; // This exception should drop the connection.
+            throw t;
+        }
+        // Finish block mode outside here so exception will not fatal the session.
+        if (!ignoreResult && (isUpdate || !connection.isStreamMode())) {
+            result.finishBlockMode();
+        }
+        return ignoreResult ? null : result;
+    }
+
     // Return 0 if ignore result.
-    public synchronized XResult execUpdate(XConnection connection, String sql, List<PolarxDatatypes.Any> args,
+    public synchronized XResult execUpdate(XConnection connection, BytesSql sql, byte[] hint,
+                                           List<PolarxDatatypes.Any> args,
                                            boolean ignoreResult, ByteString digest) throws SQLException {
         if (digest != null && XConfig.GALAXY_X_PROTOCOL) {
             throw new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_SESSION, "Digest not supported in galaxy.");
         }
 
-        if (XConnectionManager.getInstance().isEnableTrxLeakCheck()) {
-            if (StringUtils.containsIgnoreCase(sql, "XA START ") ||
-                StringUtils.containsIgnoreCase(sql, "XA PREPARE ")) {
-                xaStatus = sql;
-            } else if (StringUtils.containsIgnoreCase(sql, "XA ROLLBACK ") ||
-                StringUtils.containsIgnoreCase(sql, "XA COMMIT ")) {
-                xaStatus = null;
-            } else if (sql.equalsIgnoreCase("begin") ||
-                StringUtils.containsIgnoreCase(sql, "*/begin") ||
-                StringUtils.containsIgnoreCase(sql, "START TRANSACTION")) {
-                transactionStatus = true;
-            } else if (sql.equalsIgnoreCase("rollback") || sql.equalsIgnoreCase("commit") ||
-                StringUtils.containsIgnoreCase(sql, "*/rollback") ||
-                StringUtils.containsIgnoreCase(sql, "*/commit")) {
-                transactionStatus = false;
-            }
-        }
+        execPreDealing(connection, sql, true);
 
-        final XDataSource dataSource = connection.getDataSource();
-        if (dataSource != null) {
-            dataSource.getUpdateCount().getAndIncrement();
-        }
-        perfCollection.getUpdateCount().getAndIncrement();
-
-        initForRequest();
-        applyDefaultEncodingMySQL(connection);
-
-        if (XLog.XProtocolLogger.isDebugEnabled()) {
-            traceCtsInfo();
-
-            historySql.add(sql);
-            sessionSql.add(sql);
+        boolean explain = isExplain(hint);
+        if (explain) {
+            hint = Arrays.copyOfRange(hint, 8, hint.length);
         }
 
         // Send request.
@@ -1599,31 +1766,32 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
         // Dealing cache.
         if (!ignoreResult && !noCache && digest != null && supportPlanCache()) {
             // Only query with no ignore can go the cache.
-            final String traceId;
-            if (sql.startsWith("/*DRDS")) {
-                final int endIdx = sql.indexOf("*/", 6) + 2;
-                traceId = sql.substring(0, endIdx);
-                sql = sql.substring(endIdx);
-            } else {
-                traceId = null;
-            }
 
             // Always use cache.
             setStmt = false;
             builder.setStmtDigest(digest);
-            if (traceId != null) {
-                builder.setHint(ByteString.copyFromUtf8(traceId));
-            }
+            builder.setHint(ByteString.copyFrom(hint));
+            final XDataSource dataSource = connection.getDataSource();
             if (dataSource != null) {
                 dataSource.getCacheSqlQuery().getAndIncrement();
             }
         }
-
         String extra = null;
         if (setStmt) {
             try {
-                builder.setStmt(ByteString.copyFrom(sql, toJavaEncoding(getRequestEncodingMySQL())));
-            } catch (UnsupportedEncodingException e) {
+                if (explain && !isExplain(sql.getBytes())) {
+                    builder.setStmt(EXPLAIN_PRE.concat(sql.byteString(toJavaEncoding(getRequestEncodingMySQL()))));
+                } else {
+                    if ((builder.getStmtDigest() == null || builder.getStmtDigest().isEmpty()) && hint != null) {
+                        // digest is null meaning it's the first interview for this sql
+                        // hint ntb added in the front of sql
+                        builder.setStmt(ByteString.copyFrom(hint)
+                            .concat(sql.byteString(toJavaEncoding(getRequestEncodingMySQL()))));
+                    } else {
+                        builder.setStmt(sql.byteString(toJavaEncoding(getRequestEncodingMySQL())));
+                    }
+                }
+            } catch (UnsupportedCharsetException e) {
                 XLog.XLogLogger.error(e);
                 throw new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_CONNECTION, e.getMessage());
             }
@@ -1699,7 +1867,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                 lastRequest = new XResult(connection, packetQueue, lastRequest,
                     startNanos, startNanos + connection.actualTimeoutNanos(),
                     startNanos + XConfig.DEFAULT_TOTAL_TIMEOUT_NANOS,
-                    true, XResult.RequestType.EXPECTATIONS, "expect_close",
+                    true, XResult.RequestType.EXPECTATIONS, BytesSql.getBytesSql("expect_close"),
                     connection.getDefaultTokenCount(), null, null);
             }
         } catch (Throwable t) {
@@ -1744,27 +1912,21 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
         final XResult result;
         try {
             final long startNanos = System.nanoTime();
-            // Caused by special optimize of get TSO(execute on receive thread).
-            // We should finish pipeline first.
-            if (XConfig.GALAXY_X_PROTOCOL && lastIgnore) {
-                // Need add close expect message.
-                client.send(new XPacket(sessionId, Polarx.ClientMessages.Type.EXPECT_CLOSE_VALUE,
-                    PolarxExpect.Close.newBuilder().build()), true);
-                lastIgnore = false;
-                lastRequest = new XResult(connection, packetQueue, lastRequest,
-                    startNanos, startNanos + connection.actualTimeoutNanos(),
-                    startNanos + XConfig.DEFAULT_TOTAL_TIMEOUT_NANOS,
-                    true, XResult.RequestType.EXPECTATIONS, "expect_close",
-                    connection.getDefaultTokenCount(), null, null);
-                lastRequest.finishBlockMode();
-            }
-            // Then normal TSO request.
-            client.send(packet, true);
+            final boolean postOp = send_internal(connection, packet, false);
             addActive();
             result = lastUserRequest = lastRequest = new XResult(connection, packetQueue, lastRequest,
                 startNanos, startNanos + connection.actualTimeoutNanos(),
-                startNanos + connection.actualTimeoutNanos(), // for TSO never wait too long
-                false, XResult.RequestType.FETCH_TSO, GET_TSO_SQL, connection.getDefaultTokenCount(), null, null);
+                startNanos + XConfig.DEFAULT_TOTAL_TIMEOUT_NANOS,
+                false, XResult.RequestType.FETCH_TSO, BytesSql.getBytesSql(GET_TSO_SQL),
+                connection.getDefaultTokenCount(), null, null);
+            if (postOp) {
+                lastRequest = new XResult(connection, packetQueue, lastRequest,
+                    startNanos, startNanos + connection.actualTimeoutNanos(),
+                    startNanos + connection.actualTimeoutNanos(), // for TSO never wait too long
+                    true, XResult.RequestType.EXPECTATIONS, BytesSql.getBytesSql("expect_close"),
+                    connection.getDefaultTokenCount(), null, null);
+                lastRequest.finishBlockMode();
+            }
         } catch (Throwable t) {
             lastException = t; // This exception should drop the connection.
             throw t;
@@ -1778,17 +1940,22 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
         return result.getTsoValue();
     }
 
-    private long connectionId = -1;
+    private volatile long connectionId = -1;
 
-    public long getConnectionId(XConnection connection) throws SQLException {
+    public long getConnectionId() {
+        return connectionId != -1 ? connectionId : 0;
+    }
+
+    public void refereshConnetionId(XConnection connection) throws SQLException {
         // Try cached first.
-        if (connectionId != -1) {
-            return connectionId;
+        if (connectionId != -1 || status == Status.AutoCommit) {
+            return;
         }
 
         // Query.
         Long connId = null;
-        final XResult result = execQuery(connection, "select connection_id()", null, false, null);
+        final XResult result =
+            execQuery(connection, BytesSql.getBytesSql("select connection_id()"), null, null, false, null);
         while (result.next() != null) {
             try {
                 Number res = (Number) XResultUtil.resultToObject(
@@ -1797,7 +1964,8 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                 if (null == connId) {
                     connId = res.longValue();
                 }
-            } catch (Throwable ignore) {
+            } catch (Exception e) {
+                LOGGER.error(e);
             }
         }
         if (null == connId) {
@@ -1805,7 +1973,6 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                 this + " failed to get connection id.");
         }
         connectionId = connId;
-        return connId;
     }
 
     private Boolean flagMessageTimestamp = null;
@@ -1816,10 +1983,6 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
     private Boolean flagRawString = null;
 
     public boolean supportMessageTimestamp() {
-        if (XConfig.GALAXY_X_PROTOCOL) {
-            return false;
-        }
-
         if (!XConnectionManager.getInstance().isEnableMessageTimestamp()) {
             return false;
         }
@@ -1845,15 +2008,13 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             }
         } else if (client.getBaseVersion() == XClient.DnBaseVersion.DN_RDS_80_X_CLUSTER) {
             return flagMessageTimestamp = true; // Enable by default.
+        } else if (XConfig.OPEN_XRPC_PROTOCOL) {
+            return flagMessageTimestamp = true; // Enable by default.
         }
         return flagMessageTimestamp = false;
     }
 
     public boolean supportPlanCache() {
-        if (XConfig.GALAXY_X_PROTOCOL) {
-            return false;
-        }
-
         if (!XConnectionManager.getInstance().isEnablePlanCache()) {
             return false;
         }
@@ -1884,10 +2045,6 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
     }
 
     public boolean supportChunkResult() {
-        if (XConfig.GALAXY_X_PROTOCOL) {
-            return false;
-        }
-
         if (!XConnectionManager.getInstance().isEnableChunkResult()) {
             return false;
         }
@@ -1918,10 +2075,6 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
     }
 
     public boolean supportSingleShardOptimization() {
-        if (XConfig.GALAXY_X_PROTOCOL) {
-            return false;
-        }
-
         if (!XConnectionManager.getInstance().isEnableMessageTimestamp()) {
             return false; // Reuse the timestamp option.
         }
@@ -1948,15 +2101,13 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             }
         } else if (client.getBaseVersion() == XClient.DnBaseVersion.DN_RDS_80_X_CLUSTER) {
             return flagSingleShardOptimization = true; // Enable by default.
+        } else if (XConfig.OPEN_XRPC_PROTOCOL) {
+            return flagSingleShardOptimization = true; // Enable by default.
         }
         return flagSingleShardOptimization = false;
     }
 
     public boolean supportFeedback() {
-        if (XConfig.GALAXY_X_PROTOCOL) {
-            return false;
-        }
-
         if (!XConnectionManager.getInstance().isEnableFeedback()) {
             return false; // Reuse the timestamp option.
         }
@@ -2015,6 +2166,8 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             }
         } else if (client.getBaseVersion() == XClient.DnBaseVersion.DN_RDS_80_X_CLUSTER) {
             return flagRawString = false; // Disable by default.
+        } else if (XConfig.OPEN_XRPC_PROTOCOL) {
+            return flagRawString = true; // Enable by default.
         }
         return flagRawString = false;
     }

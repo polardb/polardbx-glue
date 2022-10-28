@@ -205,7 +205,7 @@ public class DecimalBlockDecoder extends AbstractBlockDecoder {
             if (0 == currentValue.getScale()) {
                 return currentValue.getUnscaled();
             } else {
-                return currentValue.getUnscaled() / Math.pow(10, currentValue.getUnscaled());
+                return currentValue.getUnscaled() / Math.pow(10, currentValue.getScale());
             }
         } else {
             if (0 == currentValue.getScale()) {

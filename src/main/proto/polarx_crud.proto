@@ -41,8 +41,8 @@ message Column {
 // :param alias: optional alias. Required for DOCUMENTs (clients may use 
 //              the source string as default)
 message Projection {
-  required Polarx.Expr.Expr source = 1;
-  optional string alias = 2;
+    required Polarx.Expr.Expr source = 1;
+    optional string alias = 2;
 }
 
 // DataModel to use for filters, names, ...
@@ -74,7 +74,7 @@ message Order {
   };
 
   required Polarx.Expr.Expr expr = 1;
-  optional Direction direction = 2 [default = ASC];
+  optional Direction direction = 2 [ default=ASC ];
 }
 
 // update operations
@@ -148,7 +148,7 @@ message Insert {
     repeated Polarx.Expr.Expr field = 1;
   };
   repeated TypedRow row = 4;
-  repeated Polarx.Datatypes.Scalar args = 5;
+  repeated Polarx.Datatypes.Scalar args = 5; 
 };
 
 // Update documents/rows in a collection/table

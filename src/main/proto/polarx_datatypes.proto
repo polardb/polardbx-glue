@@ -55,6 +55,7 @@ message Scalar {
     V_STRING = 8;
     V_PLACEHOLDER = 9; // 绑定动态参数
     V_IDENTIFIER = 10; // 用于表示表名，库名，列名等
+    V_RAW_STRING = 11;
 
     V_IDENTIFIER_GALAXY = 21;
   };

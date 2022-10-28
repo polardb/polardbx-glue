@@ -18,6 +18,7 @@ package com.alibaba.polardbx.rpc.compatible;
 
 import com.alibaba.polardbx.common.exception.NotSupportException;
 import com.alibaba.polardbx.common.exception.TddlNestableRuntimeException;
+import com.alibaba.polardbx.common.jdbc.BytesSql;
 import com.alibaba.polardbx.rpc.XConfig;
 import com.alibaba.polardbx.rpc.pool.XConnection;
 import com.alibaba.polardbx.rpc.result.XResult;
@@ -48,8 +49,8 @@ public class XStatement implements Statement {
         return connection.execQuery(sql);
     }
 
-    public XResult executeQueryX(String sql, ByteString digest) throws SQLException {
-        return connection.execQuery(sql, null, false, digest);
+    public XResult executeQueryX(BytesSql sql, byte[] hint, ByteString digest) throws SQLException {
+        return connection.execQuery(sql, hint, null, false, digest);
     }
 
     public long executeUpdateX(String sql) throws SQLException {

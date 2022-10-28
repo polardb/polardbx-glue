@@ -16,14 +16,13 @@
 
 package com.alibaba.polardbx.rpc.packet;
 
+import com.alibaba.polardbx.common.exception.TddlRuntimeException;
+import com.alibaba.polardbx.common.exception.code.ErrorCode;
+import com.alibaba.polardbx.common.jdbc.BytesSql;
 import com.google.protobuf.ByteString;
 import com.mysql.cj.polarx.protobuf.PolarxSql;
 import com.mysql.cj.x.protobuf.Polarx;
 import com.mysql.cj.x.protobuf.PolarxExecPlan;
-import com.alibaba.polardbx.common.exception.TddlRuntimeException;
-import com.alibaba.polardbx.common.exception.code.ErrorCode;
-
-import java.io.UnsupportedEncodingException;
 
 /**
  * For rebuild XPacket and lazy build.
@@ -38,8 +37,11 @@ public class XPacketBuilder {
     final PolarxExecPlan.AnyPlan plan;
 
     final PolarxSql.StmtExecute.Builder sqlBuilder;
-    final String sql;
+    final BytesSql sql;
     final String encoding;
+
+    final PolarxSql.GalaxyPrepareExecute.Builder galaxyPrepareBuilder;
+    final ByteString extraPrefix;
 
     public XPacketBuilder(long sessionId, PolarxExecPlan.ExecPlan.Builder planBuilder, PolarxExecPlan.AnyPlan plan) {
         this.sessionId = sessionId;
@@ -48,19 +50,43 @@ public class XPacketBuilder {
         this.sqlBuilder = null;
         this.sql = null;
         this.encoding = null;
+        this.galaxyPrepareBuilder = null;
+        this.extraPrefix = null;
     }
 
-    public XPacketBuilder(long sessionId, PolarxSql.StmtExecute.Builder sqlBuilder, String sql, String encoding) {
+    public XPacketBuilder(long sessionId, PolarxSql.StmtExecute.Builder sqlBuilder, BytesSql sql, String encoding) {
         this.sessionId = sessionId;
         this.planBuilder = null;
         this.plan = null;
         this.sqlBuilder = sqlBuilder;
         this.sql = sql;
         this.encoding = encoding;
+        this.galaxyPrepareBuilder = null;
+        this.extraPrefix = null;
+    }
+
+    public XPacketBuilder(long sessionId, PolarxSql.GalaxyPrepareExecute.Builder galaxyPrepareBuilder, BytesSql sql,
+                          String encoding, ByteString extraPrefix) {
+        this.sessionId = sessionId;
+        this.planBuilder = null;
+        this.plan = null;
+        this.sqlBuilder = null;
+        this.sql = sql;
+        this.encoding = encoding;
+        this.galaxyPrepareBuilder = galaxyPrepareBuilder;
+        this.extraPrefix = extraPrefix;
     }
 
     public boolean isPlan() {
         return planBuilder != null;
+    }
+
+    public boolean isSql() {
+        return sqlBuilder != null;
+    }
+
+    public boolean isGalaxyPrepare() {
+        return galaxyPrepareBuilder != null;
     }
 
     public XPacket build() {
@@ -68,16 +94,27 @@ public class XPacketBuilder {
             assert plan != null;
             planBuilder.setPlan(plan);
             return new XPacket(sessionId, Polarx.ClientMessages.Type.EXEC_PLAN_READ_VALUE, planBuilder.build());
-        } else {
-            assert sqlBuilder != null;
+        } else if (sqlBuilder != null) {
             assert sql != null;
             assert encoding != null;
             try {
-                sqlBuilder.setStmt(ByteString.copyFrom(sql, encoding));
-            } catch (UnsupportedEncodingException e) {
+                sqlBuilder.setStmt(sql.byteString(encoding));
+            } catch (Exception e) {
                 throw new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_CONNECTION, e.getMessage());
             }
             return new XPacket(sessionId, Polarx.ClientMessages.Type.EXEC_SQL_VALUE, sqlBuilder.build());
+        } else {
+            assert galaxyPrepareBuilder != null;
+            assert sql != null;
+            assert encoding != null;
+            try {
+                galaxyPrepareBuilder.setStmt(
+                    null == extraPrefix ? sql.byteString(encoding) : extraPrefix.concat(sql.byteString(encoding)));
+            } catch (Exception e) {
+                throw new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_CONNECTION, e.getMessage());
+            }
+            return new XPacket(sessionId, Polarx.ClientMessages.Type.GALAXY_PREPARE_EXECUTE_VALUE,
+                galaxyPrepareBuilder.build());
         }
     }
 

@@ -520,21 +520,22 @@ public class XClientPool {
             if (0 == client.getWorkingSessionCount()) {
                 // All freed. Force close.
                 XLog.XLogLogger.info(client + " aging close.");
-                executor.execute(() -> removeClient(client, "Client removed safe."));
+                executor.execute(() -> removeClient(client, "Client removedClient removed safe."));
             } else {
                 aliveAging.add(client);
             }
         }
 
         // Check alive on both container.
+        final int probeTimeout = DynamicConfig.getInstance().getXprotoProbeTimeout();
         copy = new ArrayList<>();
         copy.addAll(clients);
         copy.addAll(aliveAging);
         for (XClient client : copy) {
             executor.execute(() -> {
                 if (client.isBad() ||
-                    (client.needProb() &&
-                        !client.probe(manager.getIdGenerator(), XConfig.DEFAULT_PROBE_TIMEOUT_NANOS))) {
+                    (probeTimeout > 0 && client.needProb() &&
+                        !client.probe(manager.getIdGenerator(), 1000000L * probeTimeout))) {
                     XLog.XLogLogger.warn("Found bad " + client + " and remove it.");
                     removeClient(client, "Client removed.");
                 } else if (client.isActive()) {

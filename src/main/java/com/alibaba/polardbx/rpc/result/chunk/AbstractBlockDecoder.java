@@ -21,6 +21,7 @@ import com.google.protobuf.CodedInputStream;
 import com.mysql.cj.polarx.protobuf.PolarxResultset;
 import com.alibaba.polardbx.common.exception.NotSupportException;
 
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -134,7 +135,7 @@ public abstract class AbstractBlockDecoder implements BlockDecoder {
     }
 
     @Override
-    public Set<Slice> getSet() throws Exception {
+    public List<Slice> getSet() throws Exception {
         throw new NotSupportException("XChunkDecoder getSet from " + this.getClass().getSimpleName());
     }
 

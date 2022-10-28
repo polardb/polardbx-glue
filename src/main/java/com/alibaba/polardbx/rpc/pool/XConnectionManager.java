@@ -92,6 +92,8 @@ public class XConnectionManager {
     // id 0 is reserved for auth. id 1 is reserved for legacy galaxy.
     private final AtomicLong idGenerator = new AtomicLong(2);
 
+    private ThreadPoolExecutor checkerThreads = null;
+
     private XConnectionManager(int maxClientPerInstance, int maxSessionPerClient, int maxPooledSessionPerInstance) {
         this.maxClientPerInstance = maxClientPerInstance;
         this.maxSessionPerClient = maxSessionPerClient;
@@ -115,19 +117,21 @@ public class XConnectionManager {
                 XLog.XLogLogger.error(t);
             }
 
-            ThreadPoolExecutor threadPoolExecutor = null;
             try {
-                threadPoolExecutor = new ThreadPoolExecutor(XConfig.DEFAULT_CONNECTION_CHECKER_WORKER_NUMBER,
-                    XConfig.DEFAULT_CONNECTION_CHECKER_WORKER_NUMBER,
-                    0,
-                    TimeUnit.SECONDS,
-                    new LinkedBlockingQueue<>(),
-                    new NamedThreadFactory("XConnection-Check-Workers", true));
+                // Use the global thread pool for check.
+                if (null == checkerThreads) {
+                    checkerThreads = new ThreadPoolExecutor(XConfig.DEFAULT_CONNECTION_CHECKER_WORKER_NUMBER,
+                        XConfig.DEFAULT_CONNECTION_CHECKER_WORKER_NUMBER,
+                        XConfig.DEFAULT_PROBE_IDLE_NANOS,
+                        TimeUnit.NANOSECONDS,
+                        new LinkedBlockingQueue<>(),
+                        new NamedThreadFactory("XConnection-Check-Workers", true));
+                }
 
                 try {
                     for (XClientPool pool : instancePool.values()) {
                         if (pool.getRefCount().get() > 0) {
-                            pool.cleanupClient(threadPoolExecutor);
+                            pool.cleanupClient(checkerThreads);
                         } else {
                             XLog.XLogLogger.warn("Found 0 reference pool " + pool + " may leak or initializing.");
                         }
@@ -137,14 +141,43 @@ public class XConnectionManager {
                 }
 
                 // Wait all worker done.
-                threadPoolExecutor.shutdown();
-                threadPoolExecutor
-                    .awaitTermination(XConfig.DEFAULT_CONNECTION_CHECKER_TIMEOUT_NANOS, TimeUnit.NANOSECONDS);
-            } catch (Exception e) {
-                XLog.XLogLogger.error(e);
-            } finally {
-                if (threadPoolExecutor != null) {
-                    threadPoolExecutor.shutdownNow();
+                final long startTimeNanos = System.nanoTime();
+                long nowNanos;
+                while ((nowNanos = System.nanoTime()) - startTimeNanos
+                    < XConfig.DEFAULT_CONNECTION_CHECKER_TIMEOUT_NANOS &&
+                    checkerThreads.getCompletedTaskCount() < checkerThreads.getTaskCount()) {
+                    // still tasks pending
+                    Thread.sleep(100); // 100ms
+                }
+                XLog.XLogLogger.debug("XConnection check time: " + (nowNanos - startTimeNanos) + "ns");
+
+                // recheck
+                if (checkerThreads.getCompletedTaskCount() < checkerThreads.getTaskCount()) {
+                    // still task running, force shutdown
+                    try {
+                        checkerThreads.shutdown();
+                        checkerThreads.awaitTermination(
+                            XConfig.DEFAULT_CONNECTION_CHECKER_TIMEOUT_NANOS, TimeUnit.NANOSECONDS);
+                    } catch (Throwable t) {
+                        XLog.XLogLogger.error(t);
+                    } finally {
+                        checkerThreads.shutdownNow();
+                    }
+
+                    // free thread pool
+                    checkerThreads = null;
+                }
+            } catch (Throwable t) {
+                XLog.XLogLogger.error(t);
+                // force shutdown if error occurs
+                if (checkerThreads != null) {
+                    try {
+                        checkerThreads.shutdownNow();
+                    } catch (Throwable t1) {
+                        XLog.XLogLogger.error(t1);
+                        // never throw in schedule task
+                    }
+                    checkerThreads = null;
                 }
             }
         }, intervalNanos, intervalNanos, TimeUnit.NANOSECONDS);
@@ -183,12 +216,7 @@ public class XConnectionManager {
     }
 
     public void setMaxClientPerInstance(int maxClientPerInstance) {
-        if (XConfig.GALAXY_X_PROTOCOL) {
-            this.maxClientPerInstance = maxClientPerInstance * 8;
-            // Galaxy protocol allow only one session per connection.
-        } else {
-            this.maxClientPerInstance = maxClientPerInstance;
-        }
+        this.maxClientPerInstance = maxClientPerInstance;
     }
 
     public int getMaxSessionPerClient() {
@@ -302,7 +330,7 @@ public class XConnectionManager {
     }
 
     public boolean isEnablePlanCache() {
-        if (XConfig.GALAXY_X_PROTOCOL) {
+        if (XConfig.GALAXY_X_PROTOCOL || XConfig.OPEN_XRPC_PROTOCOL) {
             return false;
         }
         return enablePlanCache;
@@ -313,7 +341,7 @@ public class XConnectionManager {
     }
 
     public boolean isEnableChunkResult() {
-        if (XConfig.GALAXY_X_PROTOCOL) {
+        if (XConfig.GALAXY_X_PROTOCOL || XConfig.OPEN_XRPC_PROTOCOL) {
             return false;
         }
         return enableChunkResult;
@@ -340,7 +368,7 @@ public class XConnectionManager {
     }
 
     public boolean isEnableFeedback() {
-        if (XConfig.GALAXY_X_PROTOCOL) {
+        if (XConfig.GALAXY_X_PROTOCOL || XConfig.OPEN_XRPC_PROTOCOL) {
             return false;
         }
         return enableFeedback;

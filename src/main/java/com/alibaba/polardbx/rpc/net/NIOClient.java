@@ -331,11 +331,13 @@ public class NIOClient implements NIOConnection {
 
             // Decode.
             final long maxPacketSize = XConnectionManager.getInstance().getMaxPacketSize();
+            final int headerSize = XConfig.GALAXY_X_PROTOCOL ? 14 : 13;
+            final int lengthOffset = XConfig.GALAXY_X_PROTOCOL ? 9 : 8;
 
             recvBuffer.flip();
-            while (recvBuffer.remaining() >= XPacket.HEADER_SIZE) {
+            while (recvBuffer.remaining() >= headerSize) {
                 final int packetSize =
-                    recvBuffer.getInt(recvBuffer.position() + XPacket.LENGTH_OFFSET) - XPacket.TYPE_SIZE;
+                    recvBuffer.getInt(recvBuffer.position() + lengthOffset) - XPacket.TYPE_SIZE;
 
                 // Check bad header.
                 if (packetSize < 0 || packetSize > maxPacketSize) {
@@ -345,13 +347,13 @@ public class NIOClient implements NIOConnection {
                             + "exceeds the allowed maximum (" + maxPacketSize + ").");
                 }
 
-                if (XPacket.HEADER_SIZE + packetSize > readBuffer.capacity()) {
+                if (headerSize + packetSize > readBuffer.capacity()) {
                     // Larger than normal buffer.
                     bigBufferMark.set(true);
                     bigBufferClean.set(false);
                 }
 
-                if (recvBuffer.remaining() >= XPacket.HEADER_SIZE + packetSize) {
+                if (recvBuffer.remaining() >= headerSize + packetSize) {
 //                    final int start = recvBuffer.position();
 
                     final long sid = recvBuffer.getLong();
@@ -482,7 +484,7 @@ public class NIOClient implements NIOConnection {
                         recvBuffer.position(nextPos);
                         recvBuffer.limit(oldLimit);
                     }
-                } else if (XPacket.HEADER_SIZE + packetSize > recvBuffer.capacity()) {
+                } else if (headerSize + packetSize > recvBuffer.capacity()) {
                     // Larger buffer needed.
                     final ByteBuffer newBuf = ByteBuffer.allocate(packetSize + 0x1000)
                         .order(ByteOrder.LITTLE_ENDIAN); // On heap.
@@ -543,7 +545,8 @@ public class NIOClient implements NIOConnection {
                     + "exceeds the allowed maximum (" + XConnectionManager.getInstance().getMaxPacketSize() + ").");
         }
 
-        final int fullSize = XPacket.HEADER_SIZE + size;
+        final int headerSize = XConfig.GALAXY_X_PROTOCOL ? 14 : 13;
+        final int fullSize = headerSize + size;
 
         Throwable throwable = null;
         final boolean directWrite = XConnectionManager.getInstance().isEnableDirectWrite();
@@ -575,7 +578,7 @@ public class NIOClient implements NIOConnection {
                     lastWrite.flip();
                     done = true;
                     // Skip to next if not enough.
-                    if (lastWrite.limit() + XPacket.HEADER_SIZE > lastWrite.capacity()) {
+                    if (lastWrite.limit() + headerSize > lastWrite.capacity()) {
                         lastWrite = null;
                     }
                 }
@@ -596,7 +599,7 @@ public class NIOClient implements NIOConnection {
                     buffer.put((byte) packet.getType());
                     msg.writeTo(CodedOutputStream.newInstance(buffer));
                     buffer.position(buffer.position() + size);
-                    if (buffer.remaining() >= XPacket.HEADER_SIZE) {
+                    if (buffer.remaining() >= headerSize) {
                         lastWrite = buffer;
                     } else {
                         lastWrite = null;

@@ -16,9 +16,11 @@
 
 package com.alibaba.polardbx.rpc;
 
+import com.alibaba.polardbx.common.datatype.Decimal;
 import com.alibaba.polardbx.common.jdbc.TableName;
 import com.alibaba.polardbx.common.utils.GeneralUtil;
 import com.alibaba.polardbx.rpc.client.XSession;
+import com.alibaba.polardbx.common.datatype.UInt64;
 import com.alibaba.polardbx.common.utils.GeneralUtil;
 import com.alibaba.polardbx.rpc.client.XSession;
 import com.google.protobuf.ByteString;
@@ -33,19 +35,31 @@ import java.sql.Blob;
 import java.sql.Date;
 import java.sql.Time;
 import java.sql.Timestamp;
+import java.util.List;
 
 /**
  * @version 1.0
  */
 public class XUtil {
 
-    public static PolarxDatatypes.Scalar genUtf8RawStringScalar(String value) {
+    public static PolarxDatatypes.Scalar genUtf8RawStringScalar(String value, XSession session) {
         final PolarxDatatypes.Scalar.String.Builder stringBuilder = PolarxDatatypes.Scalar.String.newBuilder();
         final PolarxDatatypes.Scalar.Builder scalarBuilder = PolarxDatatypes.Scalar.newBuilder();
 
         // Default 33.
         // stringBuilder.setCollation(33); // utf8mb3 / bytes
-        stringBuilder.setValue(ByteString.copyFromUtf8(value));
+//        stringBuilder.setValue(ByteString.copyFromUtf8(value));
+
+        if (session != null) {
+            try {
+                stringBuilder.setValue(
+                    ByteString.copyFrom(value, XSession.toJavaEncoding(session.getRequestEncodingMySQL())));
+            } catch (Exception e) {
+                throw GeneralUtil.nestedException(e);
+            }
+        } else {
+            stringBuilder.setValue(ByteString.copyFromUtf8(value));
+        }
         scalarBuilder.setType(PolarxDatatypes.Scalar.Type.V_RAW_STRING);
         scalarBuilder.setVString(stringBuilder);
         return scalarBuilder.build();
@@ -58,6 +72,25 @@ public class XUtil {
         // Default utf8mb4.
         stringBuilder.setCollation(45); // utf8mb4_general_ci
         stringBuilder.setValue(ByteString.copyFromUtf8(value));
+        scalarBuilder.setType(PolarxDatatypes.Scalar.Type.V_STRING);
+        scalarBuilder.setVString(stringBuilder);
+        return scalarBuilder.build();
+    }
+
+    public static PolarxDatatypes.Scalar genStringScalar(String value, XSession session) {
+        final PolarxDatatypes.Scalar.String.Builder stringBuilder = PolarxDatatypes.Scalar.String.newBuilder();
+        final PolarxDatatypes.Scalar.Builder scalarBuilder = PolarxDatatypes.Scalar.newBuilder();
+
+        if (session != null) {
+            try {
+                stringBuilder.setValue(
+                    ByteString.copyFrom(value, XSession.toJavaEncoding(session.getRequestEncodingMySQL())));
+            } catch (Exception e) {
+                throw GeneralUtil.nestedException(e);
+            }
+        } else {
+            stringBuilder.setValue(ByteString.copyFromUtf8(value));
+        }
         scalarBuilder.setType(PolarxDatatypes.Scalar.Type.V_STRING);
         scalarBuilder.setVString(stringBuilder);
         return scalarBuilder.build();
@@ -148,9 +181,18 @@ public class XUtil {
     private static final BigInteger ZERO = new BigInteger("0");
     private static final BigInteger LONG_LIMIT = new BigInteger("18446744073709551616");
 
+    public static PolarxDatatypes.Array genScalarList(List values, XSession session) {
+        PolarxDatatypes.Array.Builder builder = PolarxDatatypes.Array.newBuilder();
+        for (Object value : values) {
+            PolarxDatatypes.Scalar scalar = genScalar(value, session);
+            builder.addValue(XUtil.genAny(scalar));
+        }
+        return builder.build();
+    }
+
     public static PolarxDatatypes.Scalar genScalar(Object value, XSession session) {
         if (value instanceof String) {
-            return genUtf8StringScalar((String) value);
+            return genStringScalar((String) value, session);
         } else if (value instanceof Integer || value instanceof Long || value instanceof Short
             || value instanceof Byte) {
             return genSIntScalar(((Number) value).longValue());
@@ -171,7 +213,13 @@ public class XUtil {
             }
         } else if (value instanceof BigDecimal) {
             if (session != null && session.supportRawString()) {
-                return genUtf8RawStringScalar(value.toString());
+                return genUtf8RawStringScalar(value.toString(), session);
+            } else {
+                return genUtf8StringScalar(value.toString());
+            }
+        } else if (value instanceof Decimal) {
+            if (session != null && session.supportRawString()) {
+                return genUtf8RawStringScalar(value.toString(), session);
             } else {
                 return genUtf8StringScalar(value.toString());
             }
@@ -207,6 +255,8 @@ public class XUtil {
             } else {
                 return genIdentifierScalar(tableName);
             }
+        } else if (value instanceof UInt64) {
+            return genUIntScalar(((UInt64) value).longValue());
         } else {
             // TODO: support more type.
             throw GeneralUtil.nestedException("TODO: support more type. " + value.getClass().getName());
@@ -218,6 +268,14 @@ public class XUtil {
 
         builder.setType(PolarxDatatypes.Any.Type.SCALAR);
         builder.setScalar(scalar);
+        return builder.build();
+    }
+
+    public static PolarxDatatypes.Any genAny(PolarxDatatypes.Array array) {
+        final PolarxDatatypes.Any.Builder builder = PolarxDatatypes.Any.newBuilder();
+
+        builder.setType(PolarxDatatypes.Any.Type.ARRAY);
+        builder.setArray(array);
         return builder.build();
     }
 

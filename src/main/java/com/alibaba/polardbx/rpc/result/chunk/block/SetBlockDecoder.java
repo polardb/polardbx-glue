@@ -22,7 +22,9 @@ import com.mysql.cj.polarx.protobuf.PolarxResultset;
 import com.alibaba.polardbx.common.exception.TddlRuntimeException;
 import com.alibaba.polardbx.common.exception.code.ErrorCode;
 
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -30,7 +32,7 @@ import java.util.Set;
  */
 public class SetBlockDecoder extends AbstractBlockDecoder {
 
-    private Set<Slice> currentValue;
+    private List<Slice> currentValue;
 
     public SetBlockDecoder(PolarxResultset.Chunk chunk, int columnIndex,
                            PolarxResultset.ColumnMetaData meta) {
@@ -52,13 +54,13 @@ public class SetBlockDecoder extends AbstractBlockDecoder {
                 } else if (1 == totalLength) {
                     // Empty?
                     stream.skipRawBytes(totalLength);
-                    currentValue = new HashSet<>();
+                    currentValue = new ArrayList<>();
                 } else {
                     final int limit = stream.getTotalBytesRead() + totalLength;
                     if (limit <= stream.getTotalBytesRead()) {
                         throw new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_RESULT, "Set chunk overflow.");
                     }
-                    currentValue = new HashSet<>();
+                    currentValue = new ArrayList<>();
                     while (stream.getTotalBytesRead() < limit) {
                         final int len = (int) stream.readInt64();
                         currentValue.add(new Slice(stream.readRawBytes(len), 0, len));
@@ -79,7 +81,7 @@ public class SetBlockDecoder extends AbstractBlockDecoder {
     }
 
     @Override
-    public Set<Slice> getSet() throws Exception {
+    public List<Slice> getSet() throws Exception {
         return currentValue;
     }
 

@@ -18,6 +18,7 @@ package com.alibaba.polardbx.rpc.result;
 
 import com.alibaba.polardbx.common.exception.TddlRuntimeException;
 import com.alibaba.polardbx.common.exception.code.ErrorCode;
+import com.alibaba.polardbx.common.jdbc.BytesSql;
 import com.alibaba.polardbx.common.utils.GeneralUtil;
 import com.alibaba.polardbx.common.utils.logger.Logger;
 import com.alibaba.polardbx.common.utils.logger.LoggerFactory;
@@ -67,7 +68,8 @@ public class XResult implements AutoCloseable {
         PLAN_QUERY("plan_query"),
         PLAN_UPDATE("plan_update"),
         FETCH_TSO("fetch_tso"),
-        EXPECTATIONS("expectations");
+        EXPECTATIONS("expectations"),
+        SQL_PREPARE_EXECUTE("sql_prepare_execute");
 
         private final String name;
 
@@ -84,7 +86,7 @@ public class XResult implements AutoCloseable {
     private final String extra;
 
     // For log & dump analysis.
-    private final String sql;
+    private final BytesSql sql;
     // For cache miss retransmit.
     private XPacketBuilder retransmitPacketBuilder;
 
@@ -130,7 +132,7 @@ public class XResult implements AutoCloseable {
 
     public XResult(XConnection connection, XPacketQueue pipe, XResult previous,
                    long startNanos, long queryTimeoutNanos, long totalTimeoutNanos, boolean ignoreResult,
-                   RequestType requestType, String sql, long tokenCount,
+                   RequestType requestType, BytesSql sql, long tokenCount,
                    XPacketBuilder retransmitPacketBuilder, String extra)
         throws SQLException {
         this.connection = connection;
@@ -144,7 +146,7 @@ public class XResult implements AutoCloseable {
         this.ignoreResult = ignoreResult;
         this.requestType = requestType;
         this.extra = extra;
-        this.sql = sql.length() > 4096 ? sql.substring(0, 4096) + "..." : sql;
+        this.sql = sql;
         this.retransmitPacketBuilder = retransmitPacketBuilder;
         this.goCache = retransmitPacketBuilder != null;
         this.tokenCount = tokenCount;
@@ -153,6 +155,9 @@ public class XResult implements AutoCloseable {
 
     public void finishBlockMode() throws SQLException {
         // Fetch all data when not stream mode.
+        if (rows != null) {
+            return;
+        }
         try {
             final List<List<ByteString>> tmpRows = new ArrayList<>();
             XResultObject res;
@@ -184,7 +189,7 @@ public class XResult implements AutoCloseable {
         isFatalOnIgnorable = fatalOnIgnorable;
     }
 
-    public String getSql() {
+    public BytesSql getSql() {
         return sql;
     }
 
@@ -635,7 +640,8 @@ public class XResult implements AutoCloseable {
                         return new XResultObject(); // Pending.
                     }
                     throw new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_RESULT,
-                        "XResult stream fetch result timeout. " + (queryStart ? "Query timeout." : "Total timeout."));
+                        "XResult stream fetch result timeout. " + (queryStart ? "Query timeout." : "Total timeout.")
+                            + " " + (timeoutNanos - startNanos) / 1e9 + "s");
                 }
 
                 final long gotPktNanos = System.nanoTime();
@@ -868,7 +874,8 @@ public class XResult implements AutoCloseable {
                 if (Polarx.ServerMessages.Type.ERROR_VALUE == packet.getType()) {
                     final Polarx.Error error = (Polarx.Error) packet.getPacket();
                     // Bypass the expect error on expect_close.
-                    if (XConfig.GALAXY_X_PROTOCOL && requestType == RequestType.EXPECTATIONS && 5159 == error.getCode()
+                    if (XConfig.GALAXY_X_PROTOCOL
+                        && requestType == RequestType.EXPECTATIONS && 5159 == error.getCode()
                         && sql.equals("expect_close")) {
                         status = ResultStatus.XResultFinish;
                         finishNanos = gotPktNanos - startNanos;
@@ -877,7 +884,7 @@ public class XResult implements AutoCloseable {
                     // Ignorable request must success.
                     if (error.getSeverity() == Polarx.Error.Severity.ERROR && (!ignoreResult || !isFatalOnIgnorable)) {
                         // Cache miss?
-                        if (ResultStatus.XResultStart == status && 6000 == error.getCode()
+                        if (ResultStatus.XResultStart == status && (6000 == error.getCode() || 8000 == error.getCode())
                             && retransmitPacketBuilder != null && !ignoreResult) {
                             // Try retransmit.
                             try {
@@ -893,11 +900,11 @@ public class XResult implements AutoCloseable {
                                     }
                                 }
                                 if (!badUsage) {
-                                    logger.info("Sql/plan cache miss.");
+                                    logger.debug("Sql/plan cache miss.");
                                     if (connection.getDataSource() != null) {
                                         if (retransmitPacketBuilder.isPlan()) {
                                             connection.getDataSource().getCachePlanMiss().getAndIncrement();
-                                        } else {
+                                        } else if (retransmitPacketBuilder.isSql()) {
                                             connection.getDataSource().getCacheSqlMiss().getAndIncrement();
                                         }
                                     }
@@ -930,13 +937,9 @@ public class XResult implements AutoCloseable {
                         // Fatal error.
                         status = ResultStatus.XResultFatal;
                         finishNanos = gotPktNanos - startNanos;
-                        final String fatalMessage = ((Polarx.Error) packet.getPacket()).hasMsg() ?
-                            ((Polarx.Error) packet.getPacket()).getMsg() : "Unknown error.";
-                        final String fatalState = ((Polarx.Error) packet.getPacket()).hasSqlState() ?
-                            ((Polarx.Error) packet.getPacket()).getSqlState() : "Unknown state.";
-                        throw GeneralUtil.nestedException(
-                            connection.setLastException(new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_RESULT,
-                                "Fatal error when fetch data: " + fatalMessage + " " + fatalState)));
+                        throw (SQLException) connection.setLastException(
+                            new SQLException("Fatal error when fetch data: " + error.getMsg(), error.getSqlState(),
+                                error.getCode()));
                     }
                 } else if (Polarx.ServerMessages.Type.NOTICE_VALUE == packet.getType()) {
                     // TODO: Other notice.
