@@ -987,6 +987,10 @@ public class XPreparedStatement extends XStatement implements PreparedStatement 
         throw new NotSupportException();
     }
 
+    public void setHint(byte[] hint) {
+        this.hint = hint;
+    }
+
     /**
      * Useful function.
      */
