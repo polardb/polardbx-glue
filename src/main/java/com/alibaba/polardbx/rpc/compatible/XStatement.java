@@ -57,6 +57,10 @@ public class XStatement implements Statement {
         return connection.execUpdate(sql);
     }
 
+    public long executeUpdateX(BytesSql sql, byte[] hint) throws SQLException {
+        return connection.execUpdate(sql, hint, null);
+    }
+
     /**
      * Compatible for JDBC statement.
      */

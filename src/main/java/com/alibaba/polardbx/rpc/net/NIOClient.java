@@ -562,6 +562,7 @@ public class NIOClient implements NIOConnection {
 
             boolean done = false;
             if (lastWrite != null) {
+                final int position = lastWrite.position();
                 final int limit = lastWrite.limit();
                 if (limit + fullSize <= lastWrite.capacity()) {
                     // Capacity enough and append to tail.
@@ -576,6 +577,7 @@ public class NIOClient implements NIOConnection {
                     msg.writeTo(CodedOutputStream.newInstance(lastWrite));
                     lastWrite.position(lastWrite.position() + size);
                     lastWrite.flip();
+                    lastWrite.position(position); // Important to restore the last send state.
                     done = true;
                     // Skip to next if not enough.
                     if (lastWrite.limit() + headerSize > lastWrite.capacity()) {
