@@ -37,6 +37,7 @@ import com.alibaba.polardbx.rpc.pool.XConnectionManager;
 import com.alibaba.polardbx.rpc.result.XResult;
 import com.alibaba.polardbx.rpc.result.XResultUtil;
 import com.google.protobuf.ByteString;
+import com.mysql.cj.polarx.protobuf.PolarxConnection;
 import com.mysql.cj.polarx.protobuf.PolarxNotice;
 import com.mysql.cj.polarx.protobuf.PolarxSession;
 import com.mysql.cj.x.protobuf.Polarx;
@@ -113,6 +114,7 @@ public class XClient implements AutoCloseable {
     private volatile ClientState state = ClientState.Initializing;
 
     private final AtomicInteger probeFailTimes = new AtomicInteger(0);
+    private final AtomicBoolean probeEvent = new AtomicBoolean(false);
 
     public XClient(NIOWorker nioWorker, XClientPool pool, BiFunction<XClient, XPacket, Boolean> filter,
                    long connectTimeoutNanos) {
@@ -157,6 +159,13 @@ public class XClient implements AutoCloseable {
 
                         // Dealing with auth.
                         switch (msg.getType()) {
+                        case Polarx.ServerMessages.Type.CONN_CAPABILITIES_VALUE:
+                            synchronized (probeEvent) {
+                                probeEvent.set(true);
+                                probeEvent.notify();
+                            }
+                            break;
+
                         case Polarx.ServerMessages.Type.SESS_AUTHENTICATE_CONTINUE_VALUE:
                             scramble(sessionId, ((PolarxSession.AuthenticateContinue) msg.getPacket()).getAuthData());
                             break;
@@ -749,26 +758,53 @@ public class XClient implements AutoCloseable {
             && System.nanoTime() - lastPacketNanos.get() > XConfig.DEFAULT_PROBE_IDLE_NANOS;
     }
 
+    private void capabilitiesGet(long sessionId) {
+        final PolarxConnection.CapabilitiesGet.Builder builder = PolarxConnection.CapabilitiesGet.newBuilder();
+        final XPacket packet =
+            new XPacket(sessionId, Polarx.ClientMessages.Type.CON_CAPABILITIES_GET_VALUE, builder.build());
+        send(packet, true);
+    }
+
     public boolean probe(AtomicLong sessionIdGenerator, long timeoutNanos) {
-        try (XConnection connection = newXConnection(sessionIdGenerator,
-            XConnectionManager.getInstance().isEnableAutoCommitOptimize())) {
-            connection.init();
-            connection.setNetworkTimeoutNanos(timeoutNanos);
-            XResult result = connection.execQuery("/*X probe*/ select 1");
-            long count = 0;
-            while (result.next() != null) {
-                Number res = (Number) XResultUtil.resultToObject(
-                    result.getMetaData().get(0), result.current().getRow().get(0), true,
-                    TimeZone.getDefault()).getKey();
-                count += res.longValue();
+        if (XConfig.GALAXY_X_PROTOCOL) {
+            try (XConnection connection = newXConnection(sessionIdGenerator,
+                XConnectionManager.getInstance().isEnableAutoCommitOptimize())) {
+                connection.init();
+                connection.setNetworkTimeoutNanos(timeoutNanos);
+                XResult result = connection.execQuery("/*X probe*/ select 1");
+                long count = 0;
+                while (result.next() != null) {
+                    Number res = (Number) XResultUtil.resultToObject(
+                        result.getMetaData().get(0), result.current().getRow().get(0), true,
+                        TimeZone.getDefault()).getKey();
+                    count += res.longValue();
+                }
+                if (1 == count) {
+                    probeFailTimes.set(0);
+                    return true;
+                }
+                return probeFailTimes.addAndGet(1) < XConfig.DEFAULT_PROBE_RETRY_TIMES;
+            } catch (Throwable t) {
+                XLog.XLogLogger.error(t); // Just log and ignore.
             }
-            if (1 == count) {
-                probeFailTimes.set(0);
-                return true;
+        } else {
+            // use capabilities to check TCP
+            try {
+                probeEvent.set(false);
+                capabilitiesGet(0);
+                synchronized (probeEvent) {
+                    if (!probeEvent.get()) {
+                        probeEvent.wait(timeoutNanos / 1000000L);
+                    }
+                }
+                if (probeEvent.get()) {
+                    // good
+                    probeFailTimes.set(0);
+                    return true;
+                }
+            } catch (Throwable t) {
+                XLog.XLogLogger.error(t); // Just log and ignore.
             }
-            return probeFailTimes.addAndGet(1) < XConfig.DEFAULT_PROBE_RETRY_TIMES;
-        } catch (Throwable t) {
-            XLog.XLogLogger.error(t); // Just log and ignore.
         }
         return probeFailTimes.addAndGet(1) < XConfig.DEFAULT_PROBE_RETRY_TIMES;
     }
