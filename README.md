@@ -1,5 +1,5 @@
 
-[![LICENSE](https://img.shields.io/badge/License-Apache%202.0-green.svg)](https://github.com/ApsaraDB/galaxysql/blob/main/LICENSE)
+[![LICENSE](https://img.shields.io/badge/License-Apache%202.0-green.svg)](https://github.com/polardb/polardbx-sql/blob/main/LICENSE)
 [![Language](https://img.shields.io/badge/Language-Java-blue.svg)](https://www.java.com/)
 
 [中文文档](docs/zh_CN/README.md)
@@ -16,4 +16,4 @@ The code from MySQL Connector/J 8.0 still follows the original license, see the 
 The derivative code of GalaxyGlue is under the Apache License 2.0, see the [license](LICENSE) file for details.
 
 ## Contributing
-See [how to contribute](https://github.com/ApsaraDB/galaxysql#contributing).
+See [how to contribute](https://github.com/polardb/polardbx-sql#contributing).
