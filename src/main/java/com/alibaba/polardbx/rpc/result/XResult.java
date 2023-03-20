@@ -59,6 +59,7 @@ public class XResult implements AutoCloseable {
     private final long startNanos;
     private long queryTimeoutNanos; // First line should come before this time.
     private long totalTimeoutNanos; // All fetch operation should finish before this time.
+    private boolean timeoutOccurs = false;
     private final boolean ignoreResult;
     private boolean isFatalOnIgnorable = true; // Default fatal when error on ignorable.
 
@@ -533,7 +534,7 @@ public class XResult implements AutoCloseable {
                 logger.error("Previous unfinished query: " + sql);
                 // Wait non-ignorable is not allowed.
                 throw new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_SESSION,
-                    "Fetch next with previous unfinished.");
+                    "Fetch next with previous unfinished." + (timeoutOccurs ? " Previous query timeout." : ""));
             }
             return true;
         }
@@ -586,13 +587,17 @@ public class XResult implements AutoCloseable {
                 if (ResultStatus.XResultFatal == previousState) {
                     // Cause myself fatal.
                     status = ResultStatus.XResultFatal;
-                    throw GeneralUtil.nestedException(connection.setLastException(e));
+                    throw GeneralUtil.nestedException(session.setLastException(e));
                 } else if (previousState != ResultStatus.XResultFinish && previousState != ResultStatus.XResultError) {
                     logger.error(
                         "Prev unfinished: " + previous.sql + " status: " + previousState.name() + " now: " + sql
                             + " status: " + status.name());
+                    if (previous.timeoutOccurs) {
+                        timeoutOccurs = true; // cascade error
+                    }
                     throw new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_SESSION,
-                        "Fetch next with previous unfinished."); // This also happens when timeout.
+                        "Fetch next with previous unfinished." + (timeoutOccurs ? " Previous query timeout." : ""));
+                    // This also happens when timeout.
                 }
                 // Because we add cascade error, so don't need to care about previous error.
                 previousFinish = true;
@@ -633,16 +638,18 @@ public class XResult implements AutoCloseable {
                 try {
                     packet = pipe.poll(wait ? waitNanos : 0, TimeUnit.NANOSECONDS);
                 } catch (InterruptedException e) {
-                    throw GeneralUtil.nestedException(connection.setLastException(e));
+                    throw GeneralUtil.nestedException(session.setLastException(e));
                 }
                 if (null == packet) {
                     if (!wait) {
                         return new XResultObject(); // Pending.
                     }
+                    timeoutOccurs = true;
                     throw new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_RESULT,
                         "XResult stream fetch result timeout. " + (queryStart ? "Query timeout." : "Total timeout.")
                             + " " + (timeoutNanos - startNanos) / 1e9 + "s");
                 }
+                timeoutOccurs = false; // reset timeout flag
 
                 final long gotPktNanos = System.nanoTime();
                 switch (status) {
@@ -816,7 +823,7 @@ public class XResult implements AutoCloseable {
                         status = ResultStatus.XResultFatal;
                         finishNanos = gotPktNanos - startNanos;
                         throw GeneralUtil.nestedException(
-                            connection.setLastException(new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_RESULT,
+                            session.setLastException(new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_RESULT,
                                 "Fatal error more result set not supported.")));
 
                     default:
@@ -914,7 +921,7 @@ public class XResult implements AutoCloseable {
                                     continue loop;
                                 }
                             } catch (Throwable t) {
-                                throw GeneralUtil.nestedException(connection.setLastException(t));
+                                throw GeneralUtil.nestedException(session.setLastException(t));
                             }
                             // Only bad usage get here.
                             status = ResultStatus.XResultError;
@@ -937,7 +944,7 @@ public class XResult implements AutoCloseable {
                         // Fatal error.
                         status = ResultStatus.XResultFatal;
                         finishNanos = gotPktNanos - startNanos;
-                        throw (SQLException) connection.setLastException(
+                        throw (SQLException) session.setLastException(
                             new SQLException("Fatal error when fetch data: " + error.getMsg(), error.getSqlState(),
                                 error.getCode()));
                     }

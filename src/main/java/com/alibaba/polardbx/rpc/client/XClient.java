@@ -16,6 +16,8 @@
 
 package com.alibaba.polardbx.rpc.client;
 
+import com.alibaba.polardbx.common.eventlogger.EventLogger;
+import com.alibaba.polardbx.common.eventlogger.EventType;
 import com.alibaba.polardbx.common.exception.TddlRuntimeException;
 import com.alibaba.polardbx.common.exception.code.ErrorCode;
 import com.alibaba.polardbx.common.utils.GeneralUtil;
@@ -581,8 +583,9 @@ public class XClient implements AutoCloseable {
         Map<String, Object> variables = new HashMap<>();
         try (XConnection connection = newXConnection(sessionIdGenerator,
             XConnectionManager.getInstance().isEnableAutoCommitOptimize())) {
-            connection.init();
+            // Important: set timeout before init, because init will get conn_id with block mode
             connection.setNetworkTimeoutNanos(timeoutNanos);
+            connection.init(timeoutNanos);
             XResult result = connection.execQuery("show variables");
             while (result.next() != null) {
                 String key = (String) XResultUtil.resultToObject(
@@ -600,8 +603,9 @@ public class XClient implements AutoCloseable {
         variables = new HashMap<>();
         try (XConnection connection = newXConnection(sessionIdGenerator,
             XConnectionManager.getInstance().isEnableAutoCommitOptimize())) {
-            connection.init();
+            // Important: set timeout before init, because init will get conn_id with block mode
             connection.setNetworkTimeoutNanos(timeoutNanos);
+            connection.init(timeoutNanos);
             XResult result = connection.execQuery("show global variables");
             while (result.next() != null) {
                 String key = (String) XResultUtil.resultToObject(
@@ -626,6 +630,7 @@ public class XClient implements AutoCloseable {
             }
             final String authResult = authMessage.get();
             if (null == authResult) {
+                EventLogger.log(EventType.XRPC_AUTH_TIMEOUT, "Auth timeout " + this);
                 throw new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_CLIENT,
                     this + " auth timeout. " + timeoutNanos + "ns");
             }
@@ -640,6 +645,7 @@ public class XClient implements AutoCloseable {
         refreshVariables(sessionIdGenerator, timeoutNanos);
         state = ClientState.Ready;
 
+        EventLogger.log(EventType.XRPC_NEW_VALID_CLIENT, "New authed " + this);
         XLog.XLogLogger.info("New client: " + this);
     }
 
@@ -753,9 +759,14 @@ public class XClient implements AutoCloseable {
     }
 
     public boolean needProb() {
-        return connected.get() // TCP connected.
+        final boolean b = connected.get() // TCP connected.
             && sessionVariablesL != null && globalVariablesL != null // Init completed.
-            && System.nanoTime() - lastPacketNanos.get() > XConfig.DEFAULT_PROBE_IDLE_NANOS;
+            && nioClient.idleTime() > XConfig.DEFAULT_PROBE_IDLE_NANOS;
+        if (!b) {
+            // reset fail times.
+            probeFailTimes.set(0);
+        }
+        return b;
     }
 
     private void capabilitiesGet(long sessionId) {
@@ -769,7 +780,7 @@ public class XClient implements AutoCloseable {
         if (XConfig.GALAXY_X_PROTOCOL) {
             try (XConnection connection = newXConnection(sessionIdGenerator,
                 XConnectionManager.getInstance().isEnableAutoCommitOptimize())) {
-                connection.init();
+                connection.init(timeoutNanos);
                 connection.setNetworkTimeoutNanos(timeoutNanos);
                 XResult result = connection.execQuery("/*X probe*/ select 1");
                 long count = 0;
@@ -806,7 +817,9 @@ public class XClient implements AutoCloseable {
                 XLog.XLogLogger.error(t); // Just log and ignore.
             }
         }
-        return probeFailTimes.addAndGet(1) < XConfig.DEFAULT_PROBE_RETRY_TIMES;
+        final int failTimes = probeFailTimes.addAndGet(1);
+        XLog.XLogLogger.warn(this + " probe fail times: " + failTimes + " idle: " + nioClient.idleTime() + "ns");
+        return failTimes < XConfig.DEFAULT_PROBE_RETRY_TIMES;
     }
 
     @Override

@@ -24,6 +24,7 @@ import com.alibaba.polardbx.rpc.client.XClient;
 import com.alibaba.polardbx.rpc.packet.XPacket;
 import com.alibaba.polardbx.rpc.perf.TcpPerfItem;
 import com.alibaba.polardbx.rpc.pool.XConnectionManager;
+import com.alibaba.polardbx.rpc.utils.TimerThread;
 import com.google.protobuf.CodedOutputStream;
 import com.google.protobuf.GeneratedMessageV3;
 import com.mysql.cj.polarx.protobuf.PolarxConnection;
@@ -50,6 +51,7 @@ import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
@@ -85,6 +87,10 @@ public class NIOClient implements NIOConnection {
     private final Consumer<Collection<XPacket>> consumer; // Protocol consumer.
     private final Consumer<Throwable> fatalCallback; // Error callback.
     private final XClient client; // For perf data collection.
+
+    // for idle time check
+    private final AtomicLong lastSend = new AtomicLong(0);
+    private final AtomicLong lastRecv = new AtomicLong(0);
 
     /**
      * Usage:
@@ -167,6 +173,9 @@ public class NIOClient implements NIOConnection {
             this.channel = c;
             final long endNanos = System.nanoTime();
             XLog.XLogLogger.info(this + " connect success, connect time: " + (endNanos - startNanos) / 1000L + "us.");
+            // refresh idle time
+            lastSend.set(endNanos);
+            lastRecv.set(endNanos);
         } catch (Throwable e) {
             final long endNanos = System.nanoTime();
             XLog.XLogLogger.error(this + " connect error with timeout " + timeout + "ms. real:"
@@ -187,6 +196,12 @@ public class NIOClient implements NIOConnection {
             }
             throw e;
         }
+    }
+
+    public long idleTime() {
+        final long snd = lastSend.get(), rcv = lastRecv.get();
+        final long nowNanos = TimerThread.fastNanos();
+        return Math.max(0, Math.min(nowNanos - snd, nowNanos - rcv));
     }
 
     public boolean isPending() {
@@ -294,6 +309,9 @@ public class NIOClient implements NIOConnection {
 
     @Override
     public void read() throws IOException {
+        // record time use fast nanos
+        lastRecv.set(TimerThread.fastNanos());
+
         // This always in single thread.
         final List<XPacket> batch = new ArrayList<>(32);
 
@@ -653,6 +671,9 @@ public class NIOClient implements NIOConnection {
 
     // Must hold the write lock.
     private boolean write0() throws IOException {
+        // record time use fast nanos
+        lastSend.set(TimerThread.fastNanos());
+
         ByteBuffer top;
         while ((top = writeQueue.peek()) != null) {
             int written = channel.write(top);

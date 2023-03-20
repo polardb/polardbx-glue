@@ -16,6 +16,8 @@
 
 package com.alibaba.polardbx.rpc.pool;
 
+import com.alibaba.polardbx.common.eventlogger.EventLogger;
+import com.alibaba.polardbx.common.eventlogger.EventType;
 import com.alibaba.polardbx.common.exception.TddlRuntimeException;
 import com.alibaba.polardbx.common.exception.code.ErrorCode;
 import com.alibaba.polardbx.common.properties.DynamicConfig;
@@ -301,7 +303,7 @@ public class XClientPool {
                             }
                             try {
                                 final XConnection connection = new XConnection(pooled);
-                                connection.init();
+                                connection.init(0); // when get from pool, session already initialized
                                 connection.setConnectNano(0);
                                 connection.setWaitNano(System.nanoTime() - startNanos);
                                 return connection;
@@ -333,7 +335,12 @@ public class XClientPool {
                 if (0 == client.getWorkingSessionCount()) {
                     final XConnection connection = client.newXConnection(manager.getIdGenerator());
                     try {
-                        connection.init();
+                        // new session, and should set timeout
+                        long initTimeoutNanos = startNanos + timeoutNanos - System.nanoTime();
+                        if (initTimeoutNanos < XConfig.MIN_INIT_TIMEOUT_NANOS) {
+                            initTimeoutNanos = XConfig.MIN_INIT_TIMEOUT_NANOS;
+                        }
+                        connection.init(initTimeoutNanos);
                         connection.setConnectNano(0);
                         connection.setWaitNano(System.nanoTime() - startNanos);
                         return connection;
@@ -362,7 +369,12 @@ public class XClientPool {
                     if (client.getWorkingSessionCount() < manager.getMaxSessionPerClient()) {
                         final XConnection connection = client.newXConnection(manager.getIdGenerator());
                         try {
-                            connection.init();
+                            // new session, and should set timeout
+                            long initTimeoutNanos = startNanos + timeoutNanos - System.nanoTime();
+                            if (initTimeoutNanos < XConfig.MIN_INIT_TIMEOUT_NANOS) {
+                                initTimeoutNanos = XConfig.MIN_INIT_TIMEOUT_NANOS;
+                            }
+                            connection.init(initTimeoutNanos);
                             connection.setConnectNano(0);
                             connection.setWaitNano(System.nanoTime() - startNanos);
                             return connection;
@@ -443,7 +455,12 @@ public class XClientPool {
             }
 
             try {
-                newConnection.init();
+                // new session, and should set timeout
+                long initTimeoutNanos = startNanos + timeoutNanos - System.nanoTime();
+                if (initTimeoutNanos < XConfig.MIN_INIT_TIMEOUT_NANOS) {
+                    initTimeoutNanos = XConfig.MIN_INIT_TIMEOUT_NANOS;
+                }
+                newConnection.init(initTimeoutNanos);
                 // Record time.
                 newConnection.setWaitNano(connectStartNanos - startNanos);
                 newConnection.setConnectNano(System.nanoTime() - connectStartNanos);
@@ -536,6 +553,7 @@ public class XClientPool {
                 if (client.isBad() ||
                     (probeTimeout > 0 && client.needProb() &&
                         !client.probe(manager.getIdGenerator(), 1000000L * probeTimeout))) {
+                    EventLogger.log(EventType.XRPC_KILL_CLIENT, "TCP kill " + client);
                     XLog.XLogLogger.warn("Found bad " + client + " and remove it.");
                     removeClient(client, "Client removed.");
                 } else if (client.isActive()) {

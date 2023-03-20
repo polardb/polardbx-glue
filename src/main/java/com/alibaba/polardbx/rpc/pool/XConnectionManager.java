@@ -93,6 +93,7 @@ public class XConnectionManager {
     private final AtomicLong idGenerator = new AtomicLong(2);
 
     private ThreadPoolExecutor checkerThreads = null;
+    private final AtomicLong lastCheckTime = new AtomicLong(0);
 
     private XConnectionManager(int maxClientPerInstance, int maxSessionPerClient, int maxPooledSessionPerInstance) {
         this.maxClientPerInstance = maxClientPerInstance;
@@ -105,6 +106,15 @@ public class XConnectionManager {
             if (!enableChecker) {
                 return; // Do not check if not allowed.
             }
+
+            // check time
+            final long checkNanos = System.nanoTime();
+            final long lastCheck = lastCheckTime.get();
+            if (lastCheck != 0 && checkNanos - lastCheck > 0 &&
+                checkNanos - lastCheck < XConfig.DEFAULT_PROBE_IDLE_NANOS / 2) {
+                return;
+            }
+            lastCheckTime.set(checkNanos);
 
             // Do perf record.
             try {
@@ -149,7 +159,7 @@ public class XConnectionManager {
                     // still tasks pending
                     Thread.sleep(100); // 100ms
                 }
-                XLog.XLogLogger.debug("XConnection check time: " + (nowNanos - startTimeNanos) + "ns");
+                XLog.XLogLogger.info("XConnection check time: " + (nowNanos - startTimeNanos) + "ns");
 
                 // recheck
                 if (checkerThreads.getCompletedTaskCount() < checkerThreads.getTaskCount()) {
@@ -330,7 +340,7 @@ public class XConnectionManager {
     }
 
     public boolean isEnablePlanCache() {
-        if (XConfig.GALAXY_X_PROTOCOL || XConfig.OPEN_XRPC_PROTOCOL) {
+        if (XConfig.GALAXY_X_PROTOCOL) {
             return false;
         }
         return enablePlanCache;
@@ -341,7 +351,7 @@ public class XConnectionManager {
     }
 
     public boolean isEnableChunkResult() {
-        if (XConfig.GALAXY_X_PROTOCOL || XConfig.OPEN_XRPC_PROTOCOL) {
+        if (XConfig.GALAXY_X_PROTOCOL) {
             return false;
         }
         return enableChunkResult;

@@ -88,14 +88,20 @@ public class XConnection implements AutoCloseable, Connection {
         }
     }
 
-    public void init() throws SQLException {
+    public void init(long timeoutNanos) throws SQLException {
         if (!initialized) {
             // Reset to autocommit.
             sessionLock.readLock().lock();
+            final long orgTimeout = networkTimeoutNanos;
             try {
+                if (timeoutNanos > 0) {
+                    // set this to prevent following pre sql timeout too long
+                    networkTimeoutNanos = timeoutNanos;
+                }
                 session.setAutoCommit(this, true);
                 session.refereshConnetionId(this); // only query once
             } finally {
+                networkTimeoutNanos = orgTimeout;
                 sessionLock.readLock().unlock();
             }
             initialized = true;
