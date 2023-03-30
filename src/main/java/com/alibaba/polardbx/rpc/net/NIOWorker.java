@@ -19,6 +19,7 @@ package com.alibaba.polardbx.rpc.net;
 import com.alibaba.polardbx.common.utils.logger.Logger;
 import com.alibaba.polardbx.common.utils.logger.LoggerFactory;
 import com.alibaba.polardbx.rpc.XLog;
+import com.alibaba.polardbx.rpc.utils.CpuCoreDetector;
 
 /**
  * @version 1.0
@@ -29,13 +30,16 @@ public class NIOWorker {
     private final NIOProcessor[] processors;
     private int index = 0;
 
-    private static int MAX_THREADS = 32;
+    private static int MAX_THREADS = CpuCoreDetector.availableProcessors() * 2;
     private static long MAX_BUF_SIZE = 256 * 1024 * 1024; // 256MB
 
     static {
         if (System.getenv("cpu_cores") != null) {
             try {
-                MAX_THREADS = Integer.parseInt(System.getenv("cpu_cores")) * 2; // Fix this when have env.
+                int numOfThreads = Integer.parseInt(System.getenv("cpu_cores")) * 2;
+                if (0 < numOfThreads && numOfThreads < MAX_THREADS) {
+                    MAX_THREADS = numOfThreads;
+                }
             } catch (Throwable e) {
                 XLog.XLogLogger.warn(e);
             }
