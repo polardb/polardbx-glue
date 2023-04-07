@@ -730,13 +730,15 @@ public class XConnection implements AutoCloseable, Connection {
             default:
                 throw new SQLException("Unknown transaction isolation level: " + level);
             }
-            session.stashTransactionSequence();
+            boolean isStashed = session.stashTransactionSequence();
             try {
                 // Set ignore is ok, drop connection when fail.
                 session.execUpdate(this, BytesSql.getBytesSql(sql), null, null, true, null);
                 session.updateIsolation(levelString);
             } finally {
-                session.stashPopTransactionSequence();
+                if (isStashed) {
+                    session.stashPopTransactionSequence();
+                }
             }
         } finally {
             sessionLock.readLock().unlock();
