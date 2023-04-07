@@ -425,13 +425,15 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
         }
         try {
             if (needSet) {
-                stashTransactionSequence();
+                boolean isStashed = stashTransactionSequence();
                 try {
                     execUpdate(connection,
                         BytesSql.getBytesSql(enableAutoCommit ? "SET autocommit=1" : "SET autocommit=0"), null, null,
                         true, null);
                 } finally {
-                    stashPopTransactionSequence();
+                    if (isStashed) {
+                        stashPopTransactionSequence();
+                    }
                 }
             }
         } catch (Throwable e) {
@@ -782,12 +784,14 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             List<PolarxDatatypes.Any> args = parmas.stream()
                 .map(obj -> XUtil.genAny(XUtil.genScalar(obj, this)))
                 .collect(Collectors.toList());
-            stashTransactionSequence();
+            boolean isStashed = stashTransactionSequence();
             try {
                 // This can ignore, because we treat ignorable error as fatal.
                 execUpdate(connection, BytesSql.getBytesSql(query.toString()), null, args, true, null);
             } finally {
-                stashPopTransactionSequence();
+                if (isStashed) {
+                    stashPopTransactionSequence();
+                }
             }
 
             // Refresh cache after changed.
@@ -825,13 +829,15 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             final String copy = defaultEncodingMySQL;
             defaultEncodingMySQL = null;
             if (!copy.equalsIgnoreCase(getRequestEncodingMySQL())) {
-                stashTransactionSequence();
+                boolean isStashed = stashTransactionSequence();
                 try {
                     // This can ignore, because we treat ignorable error as fatal.
                     execUpdate(connection, BytesSql.getBytesSql("set names `" + copy + "`"), null, null, true,
                         null);
                 } finally {
-                    stashPopTransactionSequence();
+                    if (isStashed) {
+                        stashPopTransactionSequence();
+                    }
                 }
                 // Set variable after successfully invoking.
                 updateEncodingMySQL(copy);
@@ -1186,20 +1192,27 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
     }
 
     // Stash sequence info.
+    private boolean isStashed = false;
     private boolean stashUseCtsTransaction = false;
     private long stashSnapshotSeq = -1L;
     private long stashCommitSeq = -1L;
 
-    public void stashTransactionSequence() {
+    public boolean stashTransactionSequence() {
+        if (isStashed) {
+            return false;
+        }
+        isStashed = true;
         stashUseCtsTransaction = lazyUseCtsTransaction;
         stashSnapshotSeq = lazySnapshotSeq;
         stashCommitSeq = lazyCommitSeq;
         lazyUseCtsTransaction = false;
         lazySnapshotSeq = -1;
         lazyCommitSeq = -1;
+        return true;
     }
 
     public void stashPopTransactionSequence() {
+        isStashed = false;
         lazyUseCtsTransaction = stashUseCtsTransaction;
         lazySnapshotSeq = stashSnapshotSeq;
         lazyCommitSeq = stashCommitSeq;
