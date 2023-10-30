@@ -36,8 +36,10 @@ import com.google.common.collect.ImmutableList;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiFunction;
@@ -53,6 +55,9 @@ public class XClientPool {
     private final int port;
     private final String username;
     private final String password;
+
+    // Extra inst info.
+    private final Set<String> instInfo = new CopyOnWriteArraySet<>();
 
     // XClient(TCP connections).
     private final List<XClient> clients = new CopyOnWriteArrayList<>();
@@ -93,6 +98,10 @@ public class XClientPool {
 
     public String getPassword() {
         return password;
+    }
+
+    public Set<String> getInstInfo() {
+        return instInfo;
     }
 
     public int getNowPoolSize() {
@@ -334,20 +343,34 @@ public class XClientPool {
 
                 if (0 == client.getWorkingSessionCount()) {
                     final XConnection connection = client.newXConnection(manager.getIdGenerator());
-                    try {
-                        // new session, and should set timeout
-                        long initTimeoutNanos = startNanos + timeoutNanos - System.nanoTime();
-                        if (initTimeoutNanos < XConfig.MIN_INIT_TIMEOUT_NANOS) {
-                            initTimeoutNanos = XConfig.MIN_INIT_TIMEOUT_NANOS;
+                    // now check reusable to prevent create a connection on closing TCP
+                    if (client.reusable()) {
+                        try {
+                            // new session, and should set timeout
+                            long initTimeoutNanos = startNanos + timeoutNanos - System.nanoTime();
+                            if (initTimeoutNanos < XConfig.MIN_INIT_TIMEOUT_NANOS) {
+                                initTimeoutNanos = XConfig.MIN_INIT_TIMEOUT_NANOS;
+                            }
+                            connection.init(initTimeoutNanos);
+                            connection.setConnectNano(0);
+                            connection.setWaitNano(System.nanoTime() - startNanos);
+                            return connection;
+                        } catch (Throwable e) {
+                            XLog.XLogLogger.error(e);
+                            try {
+                                connection.close(); // Close connection.
+                            } catch (Throwable t) {
+                                XLog.XLogLogger.error(t);
+                            }
+                            throw e;
                         }
-                        connection.init(initTimeoutNanos);
-                        connection.setConnectNano(0);
-                        connection.setWaitNano(System.nanoTime() - startNanos);
-                        return connection;
-                    } catch (Throwable e) {
-                        XLog.XLogLogger.error(e);
-                        connection.close();
-                        throw e;
+                    } else {
+                        try {
+                            connection.close(); // Close connection.
+                        } catch (Throwable t) {
+                            XLog.XLogLogger.error(t);
+                        }
+                        // continue retry in loop
                     }
                 }
             }
@@ -368,20 +391,34 @@ public class XClientPool {
                     // Note client.getWorkingSessionCount() may less than real session number.
                     if (client.getWorkingSessionCount() < manager.getMaxSessionPerClient()) {
                         final XConnection connection = client.newXConnection(manager.getIdGenerator());
-                        try {
-                            // new session, and should set timeout
-                            long initTimeoutNanos = startNanos + timeoutNanos - System.nanoTime();
-                            if (initTimeoutNanos < XConfig.MIN_INIT_TIMEOUT_NANOS) {
-                                initTimeoutNanos = XConfig.MIN_INIT_TIMEOUT_NANOS;
+                        // now check reusable to prevent create a connection on closing TCP
+                        if (client.reusable()) {
+                            try {
+                                // new session, and should set timeout
+                                long initTimeoutNanos = startNanos + timeoutNanos - System.nanoTime();
+                                if (initTimeoutNanos < XConfig.MIN_INIT_TIMEOUT_NANOS) {
+                                    initTimeoutNanos = XConfig.MIN_INIT_TIMEOUT_NANOS;
+                                }
+                                connection.init(initTimeoutNanos);
+                                connection.setConnectNano(0);
+                                connection.setWaitNano(System.nanoTime() - startNanos);
+                                return connection;
+                            } catch (Throwable e) {
+                                XLog.XLogLogger.error(e);
+                                try {
+                                    connection.close(); // Close connection.
+                                } catch (Throwable t) {
+                                    XLog.XLogLogger.error(t);
+                                }
+                                throw e;
                             }
-                            connection.init(initTimeoutNanos);
-                            connection.setConnectNano(0);
-                            connection.setWaitNano(System.nanoTime() - startNanos);
-                            return connection;
-                        } catch (Throwable e) {
-                            XLog.XLogLogger.error(e);
-                            connection.close();
-                            throw e;
+                        } else {
+                            try {
+                                connection.close(); // Close connection.
+                            } catch (Throwable t) {
+                                XLog.XLogLogger.error(t);
+                            }
+                            // continue retry in loop
                         }
                     }
                 }
@@ -467,7 +504,11 @@ public class XClientPool {
                 return newConnection;
             } catch (Throwable e) {
                 XLog.XLogLogger.error(e);
-                newConnection.close();
+                try {
+                    newConnection.close(); // Close connection.
+                } catch (Throwable t) {
+                    XLog.XLogLogger.error(t);
+                }
                 throw e;
             }
         }
@@ -520,13 +561,17 @@ public class XClientPool {
         // Do TCP aging.
         List<XClient> copy = ImmutableList.copyOf(clients);
         for (XClient client : copy) {
-            if (client.isOld() && agingClients.size() <= manager.getMaxClientPerInstance()) {
-                // Never double the TCP connections.
-                XLog.XLogLogger.info(client + " move to aging queue.");
+            if (client.isOld() && agingClients.size() <= 3 * manager.getMaxClientPerInstance()) {
+                // Limit the total TCP connections(4 * MaxClientPerInstance).
+                final boolean removed;
                 synchronized (clients) {
-                    clients.remove(client);
+                    removed = clients.remove(client);
                 }
-                agingClients.add(client);
+                if (removed) {
+                    XLog.XLogLogger.info(client + " move to aging queue.");
+                    agingClients.add(client);
+                    client.markNotReusable();
+                }
             }
         }
 
@@ -615,6 +660,22 @@ public class XClientPool {
             }
             XLog.XLogLogger.info("Total sess cnt: " + XSession.GLOBAL_COUNTER.get());
         }
+    }
+
+    public void reload() {
+        List<XClient> copy = ImmutableList.copyOf(clients);
+        for (XClient client : copy) {
+            final boolean removed;
+            synchronized (clients) {
+                removed = clients.remove(client);
+            }
+            if (removed) {
+                XLog.XLogLogger.info(client + " force reload and move to aging queue.");
+                agingClients.add(client);
+                client.markNotReusable();
+            }
+        }
+        XLog.XLogLogger.info(this + " reload done.");
     }
 
     public void shutdown() {

@@ -18,6 +18,7 @@ package com.alibaba.polardbx.rpc.pool;
 
 import com.alibaba.polardbx.common.exception.NotSupportException;
 import com.alibaba.polardbx.common.jdbc.BytesSql;
+import com.alibaba.polardbx.common.properties.DynamicConfig;
 import com.alibaba.polardbx.rpc.GalaxyPrepare.GPTable;
 import com.alibaba.polardbx.rpc.XConfig;
 import com.alibaba.polardbx.rpc.XLog;
@@ -68,9 +69,10 @@ public class XConnection implements AutoCloseable, Connection {
     private boolean streamMode = false;
     private boolean compactMetadata = false;
     private boolean withFeedback = false;
+    private long capabilities = 0;
 
-    // For stream control.
-    private int defaultTokenCount = XConnectionManager.getInstance().getDefaultQueryToken();
+    // For stream flow control.
+    private int defaultTokenKb = DynamicConfig.getInstance().getXprotoFlowControlSizeKb();
 
     private String traceId = null;
 
@@ -131,6 +133,13 @@ public class XConnection implements AutoCloseable, Connection {
                     session.flushIgnorable(this);
                     final XResult lastRequest = session.getLastRequest();
                     if (lastRequest != null && !lastRequest.isGoodAndDone()) {
+                        XResult probe = lastRequest;
+                        while (probe != null) {
+                            XLog.XLogLogger.error(
+                                this + " last req: " + probe.getSql().toString() + " status:" + probe.getStatus()
+                                    .toString());
+                            probe = probe.getPrevious();
+                        }
                         XLog.XLogLogger.error(this + " last req unclosed. " + lastRequest.getSql());
                     }
                 } catch (Throwable e) {
@@ -199,12 +208,20 @@ public class XConnection implements AutoCloseable, Connection {
         this.withFeedback = withFeedback;
     }
 
-    public int getDefaultTokenCount() {
-        return defaultTokenCount;
+    public long getCapabilities() {
+        return capabilities;
     }
 
-    public void setDefaultTokenCount(int defaultTokenCount) {
-        this.defaultTokenCount = defaultTokenCount;
+    public void setCapabilities(long capabilities) {
+        this.capabilities = capabilities;
+    }
+
+    public int getDefaultTokenKb() {
+        return defaultTokenKb;
+    }
+
+    public void setDefaultTokenKb(int defaultTokenKb) {
+        this.defaultTokenKb = defaultTokenKb;
     }
 
     public String getTraceId() {
@@ -271,23 +288,21 @@ public class XConnection implements AutoCloseable, Connection {
         session.setLazyCommitSeq(lazyCommitSeq);
     }
 
-    public XResult execQuery(PolarxExecPlan.ExecPlan.Builder execPlan, BytesSql nativeSql)
-        throws SQLException {
-        sessionLock.readLock().lock();
-        try {
-            check();
-            return session.execQuery(this, execPlan, nativeSql, false);
-        } finally {
-            sessionLock.readLock().unlock();
-        }
+    public XResult execQuery(PolarxExecPlan.ExecPlan.Builder execPlan, BytesSql nativeSql) throws SQLException {
+        return execQuery(execPlan, nativeSql, null, false);
     }
 
-    public XResult execQuery(PolarxExecPlan.ExecPlan.Builder execPlan, BytesSql nativeSql,
+    public XResult execQuery(PolarxExecPlan.ExecPlan.Builder execPlan, BytesSql nativeSql, byte[] traceId)
+        throws SQLException {
+        return execQuery(execPlan, nativeSql, traceId, false);
+    }
+
+    public XResult execQuery(PolarxExecPlan.ExecPlan.Builder execPlan, BytesSql nativeSql, byte[] traceId,
                              boolean ignoreResult) throws SQLException {
         sessionLock.readLock().lock();
         try {
             check();
-            return session.execQuery(this, execPlan, nativeSql, ignoreResult);
+            return session.execQuery(this, execPlan, nativeSql, traceId, ignoreResult);
         } finally {
             sessionLock.readLock().unlock();
         }
@@ -507,6 +522,16 @@ public class XConnection implements AutoCloseable, Connection {
         }
     }
 
+    public boolean isXRPC() throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            return session.isXRPC();
+        } finally {
+            sessionLock.readLock().unlock();
+        }
+    }
+
     public long getConnectionId() throws SQLException {
         sessionLock.readLock().lock();
         try {
@@ -561,7 +586,7 @@ public class XConnection implements AutoCloseable, Connection {
         sessionLock.readLock().lock();
         try {
             check();
-            session.tokenOffer(defaultTokenCount);
+            session.tokenOffer(defaultTokenKb);
         } finally {
             sessionLock.readLock().unlock();
         }
@@ -593,6 +618,17 @@ public class XConnection implements AutoCloseable, Connection {
         try {
             check();
             session.setGlobalVariables(this, newGlobalVariables);
+        } finally {
+            sessionLock.readLock().unlock();
+        }
+    }
+
+    public void handleAutoSavepoint(String name, PolarxExecPlan.AutoSp.Operation op, boolean ignoreResult)
+        throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            session.handleAutoSavepoint(this, name, op, ignoreResult);
         } finally {
             sessionLock.readLock().unlock();
         }

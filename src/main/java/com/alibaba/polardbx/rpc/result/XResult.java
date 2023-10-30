@@ -70,7 +70,8 @@ public class XResult implements AutoCloseable {
         PLAN_UPDATE("plan_update"),
         FETCH_TSO("fetch_tso"),
         EXPECTATIONS("expectations"),
-        SQL_PREPARE_EXECUTE("sql_prepare_execute");
+        SQL_PREPARE_EXECUTE("sql_prepare_execute"),
+        AUTO_SP("auto_sp");
 
         private final String name;
 
@@ -95,7 +96,7 @@ public class XResult implements AutoCloseable {
     private final List<PolarxResultset.ColumnMetaData> metaData = new ArrayList<>(16);
     private XResultObject pipeCache = null;
     private long fetchCount = 0; // Rows fetched from pipe.
-    private long tokenCount = 0;
+    private long tokenSize = 0;
     private long rowsAffected = 0;
     private long generatedInsertId = 0;
     private boolean haveGeneratedInsertId = false;
@@ -133,7 +134,7 @@ public class XResult implements AutoCloseable {
 
     public XResult(XConnection connection, XPacketQueue pipe, XResult previous,
                    long startNanos, long queryTimeoutNanos, long totalTimeoutNanos, boolean ignoreResult,
-                   RequestType requestType, BytesSql sql, long tokenCount,
+                   RequestType requestType, BytesSql sql, long tokenKb,
                    XPacketBuilder retransmitPacketBuilder, String extra)
         throws SQLException {
         this.connection = connection;
@@ -150,7 +151,7 @@ public class XResult implements AutoCloseable {
         this.sql = sql;
         this.retransmitPacketBuilder = retransmitPacketBuilder;
         this.goCache = retransmitPacketBuilder != null;
-        this.tokenCount = tokenCount;
+        this.tokenSize = tokenKb * 1024L;
         rows = null;
     }
 
@@ -206,8 +207,8 @@ public class XResult implements AutoCloseable {
         return status;
     }
 
-    public long getTokenCount() {
-        return tokenCount;
+    public long getTokenSize() {
+        return tokenSize;
     }
 
     public void recordPktResponse() {
@@ -354,8 +355,19 @@ public class XResult implements AutoCloseable {
     public void close() {
         // Force close.
         try {
-            if (!isGoodAndDone()) {
-                logger.info("Query canceling: " + sql);
+            // try finish previous ignorable query first
+            if (previous != null) {
+                try {
+                    if (previous.waitFinish(true)) {
+                        previous = null;
+                    }
+                } catch (Throwable e) {
+                    logger.warn(e);
+                    logger.warn("Query canceled with previous unexpected error. " + sql);
+                }
+            }
+            if (isCancelable()) {
+                logger.debug("Query canceling: " + sql);
                 try {
                     connection.cancel();
                 } catch (Throwable ignore) {
@@ -368,6 +380,12 @@ public class XResult implements AutoCloseable {
                     if (connection.getLastUserRequest() == this && !ignoreResult) {
                         while (next() != null) {
                             ;
+                        }
+                        // or all response has already received
+                        final Throwable throwable = connection.getLastException();
+                        if (throwable != null && throwable.getMessage().contains("Query was canceled")) {
+                            // Reset the exception and let session reuse.
+                            connection.setLastException(null);
                         }
                     }
                 } catch (SQLException e) {
@@ -485,6 +503,10 @@ public class XResult implements AutoCloseable {
 
     public boolean isGoodAndDone() {
         return status == ResultStatus.XResultFinish || status == ResultStatus.XResultError;
+    }
+
+    public boolean isCancelable() {
+        return null == previous && !isDone();
     }
 
     public boolean isIgnorable() {
@@ -652,6 +674,11 @@ public class XResult implements AutoCloseable {
                 timeoutOccurs = false; // reset timeout flag
 
                 final long gotPktNanos = System.nanoTime();
+
+                // do record size flow control
+                final int headerSize = XConfig.GALAXY_X_PROTOCOL ? 14 : 13;
+                tokenSize -= headerSize + packet.getPacketSize();
+
                 switch (status) {
                 case XResultStart:
                     switch (packet.getType()) {
@@ -704,7 +731,7 @@ public class XResult implements AutoCloseable {
                         break;
 
                     case Polarx.ServerMessages.Type.OK_VALUE:
-                        if (requestType == RequestType.EXPECTATIONS) {
+                        if (requestType == RequestType.EXPECTATIONS || requestType == RequestType.AUTO_SP) {
                             status = ResultStatus.XResultFinish;
                             responseNanos = gotPktNanos - startNanos;
                             finishNanos = gotPktNanos - startNanos;
@@ -727,14 +754,12 @@ public class XResult implements AutoCloseable {
                     case Polarx.ServerMessages.Type.RESULTSET_ROW_VALUE:
                         status = ResultStatus.XResultRows;
                         ++fetchCount;
-                        --tokenCount;
                         return new XResultObject(((PolarxResultset.Row) packet.getPacket()).getFieldList());
 
                     case Polarx.ServerMessages.Type.RESULTSET_CHUNK_VALUE: {
                         final PolarxResultset.Chunk chunk = (PolarxResultset.Chunk) packet.getPacket();
                         status = ResultStatus.XResultRows;
                         fetchCount += chunk.getRowCount();
-                        tokenCount -= chunk.getRowCount();
                         resultChunk = true;
                         return new XResultObject((PolarxResultset.Chunk) packet.getPacket());
                     }
@@ -769,11 +794,11 @@ public class XResult implements AutoCloseable {
                     switch (packet.getType()) {
                     case Polarx.ServerMessages.Type.RESULTSET_ROW_VALUE: {
                         ++fetchCount;
-                        --tokenCount;
-                        final long tokenLow = XConnectionManager.getInstance().getDefaultQueryToken() / 5;
-                        if (allowPrefetchToken && tokenCount < tokenLow && pipe.count() < tokenLow) {
+                        final long tokenSizeLow = connection.getDefaultTokenKb() * 1024L / 5;
+                        if (allowPrefetchToken && tokenSize < tokenSizeLow && pipe.getBufferSize() < tokenSizeLow) {
                             connection.tokenOffer();
-                            tokenCount = connection.getDefaultTokenCount();
+                            tokenSize = connection.getDefaultTokenKb() * 1024L;
+                            ++activeOfferTokenCount;
                         }
                         return new XResultObject(((PolarxResultset.Row) packet.getPacket()).getFieldList());
                     }
@@ -781,12 +806,10 @@ public class XResult implements AutoCloseable {
                     case Polarx.ServerMessages.Type.RESULTSET_CHUNK_VALUE: {
                         final PolarxResultset.Chunk chunk = (PolarxResultset.Chunk) packet.getPacket();
                         fetchCount += chunk.getRowCount();
-                        tokenCount -= chunk.getRowCount();
-                        // May multi chunk for columns more than 10, but we don't care. Because we also count the pipe depth.
-                        final long tokenLow = XConnectionManager.getInstance().getDefaultQueryToken() / 5;
-                        if (allowPrefetchToken && tokenCount < tokenLow && pipe.count() < tokenLow) {
+                        final long tokenSizeLow = connection.getDefaultTokenKb() * 1024L / 5;
+                        if (allowPrefetchToken && tokenSize < tokenSizeLow && pipe.getBufferSize() < tokenSizeLow) {
                             connection.tokenOffer();
-                            tokenCount = connection.getDefaultTokenCount();
+                            tokenSize = connection.getDefaultTokenKb() * 1024L;
                             ++activeOfferTokenCount;
                         }
                         resultChunk = true;
@@ -813,11 +836,6 @@ public class XResult implements AutoCloseable {
                         status = ResultStatus.XResultFetchDone;
                         continue loop;
                     }
-
-                    case Polarx.ServerMessages.Type.RESULTSET_TOKEN_DONE_VALUE:
-                        connection.tokenOffer();
-                        ++tokenDoneCount;
-                        continue loop;
 
                     case Polarx.ServerMessages.Type.RESULTSET_FETCH_DONE_MORE_RESULTSETS_VALUE:
                         status = ResultStatus.XResultFatal;
@@ -991,6 +1009,14 @@ public class XResult implements AutoCloseable {
                     } catch (Throwable ignore) {
                     }
                     continue;
+                }
+
+                // when use size flow control, token may consume at any step
+                if (Polarx.ServerMessages.Type.RESULTSET_TOKEN_DONE_VALUE == packet.getType()) {
+                    connection.tokenOffer();
+                    tokenSize = connection.getDefaultTokenKb() * 1024L;
+                    ++tokenDoneCount;
+                    continue loop;
                 }
 
                 finishNanos = gotPktNanos - startNanos;

@@ -16,7 +16,6 @@
 
 package com.alibaba.polardbx.rpc.packet;
 
-import com.alibaba.polardbx.rpc.XConfig;
 import com.mysql.cj.x.protobuf.Polarx;
 
 /**

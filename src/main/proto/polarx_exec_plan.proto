@@ -72,6 +72,18 @@ message ResultTSO {
   required uint64 ts = 2;
 }
 
+//Client send AutoSp message to Server
+message AutoSp {
+  enum Operation {
+    SET = 0;
+    RELEASE = 1;
+    ROLLBACK = 2;
+  }
+  required Operation op = 1;
+  required bytes sp_name = 2;
+  optional bool reset_error = 3;
+}
+
 //
 // Exec plan.
 //
@@ -206,5 +218,10 @@ message ExecPlan {
 
   optional bool chunk_result = 11 [default = false];
   optional bool feed_back = 13 [default = false];
+  optional bytes trace_id = 14;
+  optional bytes audit_str = 15;
+
+  // capabilities
+  optional uint64 capabilities = 16;
 }
 

@@ -40,6 +40,7 @@ import com.alibaba.polardbx.rpc.result.XResult;
 import com.alibaba.polardbx.rpc.result.XResultUtil;
 import com.google.common.collect.Sets;
 import com.google.protobuf.ByteString;
+import com.googlecode.protobuf.format.JsonFormat;
 import com.mysql.cj.polarx.protobuf.PolarxExpect;
 import com.mysql.cj.polarx.protobuf.PolarxSession;
 import com.mysql.cj.polarx.protobuf.PolarxSql;
@@ -245,10 +246,20 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
 
             if (needClose) {
                 GLOBAL_COUNTER.getAndDecrement();
+                if (!isXRPC()) {
+                    // in old Xproto, should kill before close the session to prevent
+                    final XPacket packet =
+                        new XPacket(sessionId, Polarx.ClientMessages.Type.SESS_KILL_VALUE,
+                            PolarxSession.KillSession.newBuilder()
+                                .setType(PolarxSession.KillSession.KillType.CONNECTION)
+                                .setXSessionId(sessionId)
+                                .build());
+                    client.send(packet, false); // flush when close
+                }
                 final PolarxSession.Close.Builder builder = PolarxSession.Close.newBuilder();
                 final XPacket packet =
                     new XPacket(sessionId, Polarx.ClientMessages.Type.SESS_CLOSE_VALUE, builder.build());
-                client.send(packet, false); // Do not flush and send at any time.
+                client.send(packet, true);
                 pushEOF();
             }
         }
@@ -392,7 +403,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             item.setLastRequestType(request.getRequestType().toString());
             item.setLastRequestStatus(request.getStatus().toString());
             item.setLastRequestFetchCount(request.getFetchCount());
-            item.setLastRequestTokenCount(request.getTokenCount());
+            item.setLastRequestTokenSize(request.getTokenSize());
             item.setLastRequestWorkingNanos(nowNanos - request.getStartNanos());
             item.setLastRequestDataPktResponseNanos(request.getPktResponseNanos());
             item.setLastRequestResponseNanos(request.getResponseNanos());
@@ -678,6 +689,11 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                 continue;
             }
 
+            // 对于 DN 仅支持 set global 设置的变量，禁止 set session
+            if (!isGlobal && ServerVariables.isMysqlGlobal(key)) {
+                continue;
+            }
+
             // 处理采用变量赋值的情况如 :
             // set sql_mode=@@sql_mode;
             // set sql_mode=@@global.sql_mode;
@@ -903,7 +919,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                         startNanos, startNanos + connection.actualTimeoutNanos(),
                         startNanos + XConfig.DEFAULT_TOTAL_TIMEOUT_NANOS,
                         true, XResult.RequestType.EXPECTATIONS, BytesSql.getBytesSql("expect_close"),
-                        connection.getDefaultTokenCount(), null, null));
+                        connection.getDefaultTokenKb(), null, null));
                     lastIgnore = false;
                 } catch (Throwable e) {
                     XLog.XLogLogger.error(this + " failed to close expect.");
@@ -950,7 +966,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             && (null == lastRequest.get() || lastRequest.get().isGoodAndDone())
             // Must all done and no pending ignorable.
             && historySql.size() < 1000
-            && client.isActive()
+            && client.isActive() && client.reusable()
             && System.nanoTime() - createNanos - randomDelay < XConnectionManager.getInstance().getSessionAgingNanos()
             && (!XConfig.GALAXY_X_PROTOCOL || !lastIgnore);
     }
@@ -1074,7 +1090,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                 .setMsg(errStr).build()));
     }
 
-    public void tokenOffer(int tokenCount) {
+    public void tokenOffer(int tokenKb) {
         final Status nowStatus = status; // Read only, and no status lock needed.
         if (Status.Init == nowStatus || Status.Closed == nowStatus) {
             return; // Ignore inactive session.
@@ -1082,7 +1098,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
         final XPacket packet =
             new XPacket(sessionId, Polarx.ClientMessages.Type.TOKEN_OFFER_VALUE,
                 PolarxSql.TokenOffer.newBuilder()
-                    .setToken(tokenCount)
+                    .setToken(tokenKb)
                     .build());
         client.send(packet, true);
     }
@@ -1127,36 +1143,26 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             }
             // Status good or changed to ready.
             if (Status.Ready == nowStatus || Status.AutoCommit == nowStatus) {
-                // Check memory/row limit.
-                final long pipeBufferSizeLimit = XConnectionManager.getInstance().getDefaultPipeBufferSize();
-                final long pipeCountLimit = 10L * XConnectionManager.getInstance().getDefaultQueryToken();
-                if (packetQueue.getBufferSize() > pipeBufferSizeLimit) {
-                    // Buffer size limit exceed.
-                    killWithMessage("Pipe buffer size limit exceed.");
-                } else if (packetQueue.count() > pipeCountLimit) {
-                    // Count limit exceed.
-                    killWithMessage("Pipe count limit exceed.");
-                } else {
-                    packetQueue.put(0 == consume ? packets : packets.subList(consume, packets.size()));
-                    boolean gotData = false;
-                    for (XPacket packet : packets) {
-                        if (Polarx.ServerMessages.Type.RESULTSET_ROW_VALUE == packet.getType() ||
-                            Polarx.ServerMessages.Type.RESULTSET_CHUNK_VALUE == packet.getType() ||
-                            Polarx.ServerMessages.Type.RESULTSET_TSO_VALUE == packet.getType() ||
-                            Polarx.ServerMessages.Type.RESULTSET_TOKEN_DONE_VALUE == packet.getType() ||
-                            Polarx.ServerMessages.Type.RESULTSET_FETCH_DONE_VALUE == packet.getType() ||
-                            Polarx.ServerMessages.Type.ERROR_VALUE == packet.getType() ||
-                            Polarx.ServerMessages.Type.RESULTSET_FETCH_DONE_MORE_RESULTSETS_VALUE == packet.getType() ||
-                            // Special case that isDataReady may consume till RESULTSET_FETCH_DONE_VALUE,
-                            // and we still need notify when exec ok occurs.
-                            Polarx.ServerMessages.Type.SQL_STMT_EXECUTE_OK_VALUE == packet.getType()) {
-                            gotData = true;
-                            break;
-                        }
+                // Memory limitation by server so no check needed here. Ignore the row count limit.
+                packetQueue.put(0 == consume ? packets : packets.subList(consume, packets.size()));
+                boolean gotData = false;
+                for (XPacket packet : packets) {
+                    if (Polarx.ServerMessages.Type.RESULTSET_ROW_VALUE == packet.getType() ||
+                        Polarx.ServerMessages.Type.RESULTSET_CHUNK_VALUE == packet.getType() ||
+                        Polarx.ServerMessages.Type.RESULTSET_TSO_VALUE == packet.getType() ||
+                        Polarx.ServerMessages.Type.RESULTSET_TOKEN_DONE_VALUE == packet.getType() ||
+                        Polarx.ServerMessages.Type.RESULTSET_FETCH_DONE_VALUE == packet.getType() ||
+                        Polarx.ServerMessages.Type.ERROR_VALUE == packet.getType() ||
+                        Polarx.ServerMessages.Type.RESULTSET_FETCH_DONE_MORE_RESULTSETS_VALUE == packet.getType() ||
+                        // Special case that isDataReady may consume till RESULTSET_FETCH_DONE_VALUE,
+                        // and we still need notify when exec ok occurs.
+                        Polarx.ServerMessages.Type.SQL_STMT_EXECUTE_OK_VALUE == packet.getType()) {
+                        gotData = true;
+                        break;
                     }
-                    if (gotData) {
-                        dataNotify();
-                    }
+                }
+                if (gotData) {
+                    dataNotify();
                 }
             }
         } catch (Throwable e) {
@@ -1273,7 +1279,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             startNanos, startNanos + connection.actualTimeoutNanos(),
             startNanos + XConfig.DEFAULT_TOTAL_TIMEOUT_NANOS,
             ignoreResult, requestType, sql,
-            connection.getDefaultTokenCount(), retransmit, extra);
+            connection.getDefaultTokenKb(), retransmit, extra);
         lastRequest.set(last);
         lastUserRequest.set(last);
         // Use stream mode when we don't care about the result of query/update.
@@ -1296,7 +1302,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                     startNanos, startNanos + connection.actualTimeoutNanos(),
                     startNanos + XConfig.DEFAULT_TOTAL_TIMEOUT_NANOS,
                     true, XResult.RequestType.EXPECTATIONS, BytesSql.getBytesSql("expect([+no_error])"),
-                    connection.getDefaultTokenCount(), null, null));
+                    connection.getDefaultTokenKb(), null, null));
                 lastIgnore = true;
             }
             if (!ignoreResult && lastIgnore) {
@@ -1316,7 +1322,8 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
     }
 
     public synchronized XResult execQuery(XConnection connection, PolarxExecPlan.ExecPlan.Builder execPlan,
-                                          BytesSql nativeSql, boolean ignoreResult) throws SQLException {
+                                          BytesSql nativeSql, byte[] traceId, boolean ignoreResult)
+        throws SQLException {
         if (XConfig.GALAXY_X_PROTOCOL) {
             throw new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_SESSION, "Plan trans not supported in galaxy.");
         }
@@ -1337,6 +1344,11 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             sessionSql.add(execPlan.toString());
         }
 
+        // hint
+        if (traceId != null) {
+            execPlan.setTraceId(ByteString.copyFrom(traceId));
+        }
+
         boolean pureDigest = false;
         // Dealing cache.
         if (!ignoreResult && !noCache && supportPlanCache()) {
@@ -1352,7 +1364,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
         if (!XConfig.GALAXY_X_PROTOCOL) {
             execPlan.setResetError(!lastIgnore);
         }
-        execPlan.setToken(connection.getDefaultTokenCount());
+        execPlan.setToken(connection.getDefaultTokenKb());
         if (lazyUseCtsTransaction) {
             execPlan.setUseCtsTransaction(true);
             if (null == extra) {
@@ -1383,7 +1395,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
         if (chunkResult && supportChunkResult()) {
             execPlan.setChunkResult(true);
         }
-        // Note: Feedback and compact meta set by caller in execPlan.
+        // Note: Feedback, compact meta and capabilities are set by caller in execPlan.
 
         if (!XConfig.GALAXY_X_PROTOCOL) {
             lastIgnore = ignoreResult;
@@ -1392,6 +1404,10 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
         final PolarxExecPlan.AnyPlan originalPlan = pureDigest && !forceCache ? execPlan.getPlan() : null;
         if (pureDigest) {
             execPlan.clearPlan();
+        } else {
+            // add audit str
+            final JsonFormat format = new JsonFormat();
+            execPlan.setAuditStr(ByteString.copyFromUtf8(format.printToString(execPlan.getPlan())));
         }
         final PolarxExecPlan.ExecPlan plan = execPlan.build();
 
@@ -1412,7 +1428,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                     startNanos, startNanos + connection.actualTimeoutNanos(),
                     startNanos + XConfig.DEFAULT_TOTAL_TIMEOUT_NANOS,
                     true, XResult.RequestType.EXPECTATIONS, BytesSql.getBytesSql("expect_close"),
-                    connection.getDefaultTokenCount(), null, null));
+                    connection.getDefaultTokenKb(), null, null));
             }
         } catch (Throwable t) {
             lastException.set(t); // This exception should drop the connection.
@@ -1545,7 +1561,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
         if (!XConfig.GALAXY_X_PROTOCOL) {
             builder.setResetError(!lastIgnore);
         }
-        builder.setToken(connection.getDefaultTokenCount());
+        builder.setToken(connection.getDefaultTokenKb());
         if (lazyUseCtsTransaction) {
             builder.setUseCtsTransaction(true);
             if (null == extra) {
@@ -1579,6 +1595,9 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
         if (connection.isWithFeedback() && supportFeedback()) {
             builder.setFeedBack(true);
         }
+        if (connection.getCapabilities() != 0) {
+            builder.setCapabilities(connection.getCapabilities());
+        }
 
         if (!XConfig.GALAXY_X_PROTOCOL) {
             lastIgnore = ignoreResult;
@@ -1605,7 +1624,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                     startNanos, startNanos + connection.actualTimeoutNanos(),
                     startNanos + XConfig.DEFAULT_TOTAL_TIMEOUT_NANOS,
                     true, XResult.RequestType.EXPECTATIONS, BytesSql.getBytesSql("expect_close"),
-                    connection.getDefaultTokenCount(), null, null));
+                    connection.getDefaultTokenKb(), null, null));
             }
         } catch (Throwable t) {
             lastException.set(t); // This exception should drop the connection.
@@ -1682,7 +1701,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
         if (!XConfig.GALAXY_X_PROTOCOL) {
             builder.setResetError(!lastIgnore);
         }
-        builder.setToken(connection.getDefaultTokenCount());
+        builder.setToken(connection.getDefaultTokenKb());
         String extra = null;
         if (lazyUseCtsTransaction) {
             builder.setUseCtsTransaction(true);
@@ -1717,6 +1736,9 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
         if (connection.isWithFeedback() && supportFeedback()) {
             builder.setFeedBack(true);
         }
+        if (connection.getCapabilities() != 0) {
+            builder.setCapabilities(connection.getCapabilities());
+        }
 
         if (!XConfig.GALAXY_X_PROTOCOL) {
             lastIgnore = ignoreResult;
@@ -1744,7 +1766,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                     startNanos, startNanos + connection.actualTimeoutNanos(),
                     startNanos + XConfig.DEFAULT_TOTAL_TIMEOUT_NANOS,
                     true, XResult.RequestType.EXPECTATIONS, BytesSql.getBytesSql("expect_close"),
-                    connection.getDefaultTokenCount(), null, null));
+                    connection.getDefaultTokenKb(), null, null));
             }
         } catch (Throwable t) {
             lastException.set(t); // This exception should drop the connection.
@@ -1852,6 +1874,9 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
         if (connection.isWithFeedback() && supportFeedback()) {
             builder.setFeedBack(true);
         }
+        if (connection.getCapabilities() != 0) {
+            builder.setCapabilities(connection.getCapabilities());
+        }
 
         if (!XConfig.GALAXY_X_PROTOCOL) {
             lastIgnore = ignoreResult;
@@ -1875,7 +1900,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                 startNanos, startNanos + connection.actualTimeoutNanos(),
                 startNanos + XConfig.DEFAULT_TOTAL_TIMEOUT_NANOS,
                 ignoreResult, XResult.RequestType.SQL_UPDATE, sql,
-                connection.getDefaultTokenCount(), retransmit, extra); // Only care about ignore or not.
+                connection.getDefaultTokenKb(), retransmit, extra); // Only care about ignore or not.
             lastRequest.set(result);
             lastUserRequest.set(result);
             if (postOp) {
@@ -1883,7 +1908,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                     startNanos, startNanos + connection.actualTimeoutNanos(),
                     startNanos + XConfig.DEFAULT_TOTAL_TIMEOUT_NANOS,
                     true, XResult.RequestType.EXPECTATIONS, BytesSql.getBytesSql("expect_close"),
-                    connection.getDefaultTokenCount(), null, null));
+                    connection.getDefaultTokenKb(), null, null));
             }
         } catch (Throwable t) {
             lastException.set(t); // This exception should drop the connection.
@@ -1919,6 +1944,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
         }
         builder.setBatchCount(count);
 
+        final boolean pendingRequests = lastIgnore;
         if (!XConfig.GALAXY_X_PROTOCOL) {
             lastIgnore = false;
         }
@@ -1929,7 +1955,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             final long startNanos = System.nanoTime();
             // Caused by special optimize of get TSO(execute on receive thread).
             // We should finish pipeline first.
-            if (XConfig.GALAXY_X_PROTOCOL && lastIgnore) {
+            if (XConfig.GALAXY_X_PROTOCOL && pendingRequests) {
                 // Need add close expect message.
                 client.send(new XPacket(sessionId, Polarx.ClientMessages.Type.EXPECT_CLOSE_VALUE,
                     PolarxExpect.Close.newBuilder().build()), true);
@@ -1938,10 +1964,10 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                     startNanos, startNanos + connection.actualTimeoutNanos(),
                     startNanos + connection.actualTimeoutNanos(), // for TSO never wait too long
                     true, XResult.RequestType.EXPECTATIONS, BytesSql.getBytesSql("expect_close"),
-                    connection.getDefaultTokenCount(), null, null);
+                    connection.getDefaultTokenKb(), null, null);
                 lastRequest.set(last);
                 last.finishBlockMode();
-            } else if (lastIgnore) {
+            } else if (pendingRequests) {
                 // finish pending request for TSO of XRPC
                 flushNetwork();
                 final XResult last = lastRequest.get();
@@ -1956,7 +1982,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                 startNanos + connection.actualTimeoutNanos(), startNanos + connection.actualTimeoutNanos(),
                 // for TSO never wait too long
                 false, XResult.RequestType.FETCH_TSO, BytesSql.getBytesSql(GET_TSO_SQL),
-                connection.getDefaultTokenCount(), null, null);
+                connection.getDefaultTokenKb(), null, null);
             lastRequest.set(result);
             lastUserRequest.set(result);
         } catch (Throwable t) {
@@ -1970,6 +1996,73 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                 this + " failed to get TSO. errno " + result.getTsoErrorNo());
         }
         return result.getTsoValue();
+    }
+
+    public synchronized void handleAutoSavepoint(XConnection connection, String name,
+                                                 PolarxExecPlan.AutoSp.Operation op,
+                                                 boolean ignoreResult) throws SQLException {
+        if (XConfig.GALAXY_X_PROTOCOL || !isXRPC()) {
+            throw new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_SESSION, "Auto savepoint opt only support xrpc.");
+        }
+
+        initForRequest();
+
+        String sql;
+        switch (op) {
+        case SET:
+            sql = "SAVEPOINT `" + name + "`";
+            break;
+        case RELEASE:
+            sql = "RELEASE SAVEPOINT `" + name + "`";
+            break;
+        case ROLLBACK:
+            sql = "ROLLBACK SAVEPOINT `" + name + "`";
+            break;
+        default:
+            sql = null;
+        }
+
+        if (XLog.XProtocolLogger.isDebugEnabled()) {
+            historySql.add(sql);
+            sessionSql.add(sql);
+        }
+
+        final PolarxExecPlan.AutoSp.Builder builder = PolarxExecPlan.AutoSp.newBuilder();
+        builder.setSpName(ByteString.copyFromUtf8(name));
+        builder.setOp(op);
+        builder.setResetError(!lastIgnore);
+
+        lastIgnore = ignoreResult;
+
+        final XPacket packet = new XPacket(sessionId, Polarx.ClientMessages.Type.AUTO_SP_VALUE, builder.build());
+        XResult result;
+        try {
+            final long startNanos = System.nanoTime();
+
+            // Send request.
+            client.send(packet, !ignoreResult);
+
+            if (!ignoreResult) {
+                addActive();
+            }
+
+            // Get result.
+            result = new XResult(connection, packetQueue, lastRequest.get(),
+                startNanos, startNanos + connection.actualTimeoutNanos(),
+                startNanos + XConfig.DEFAULT_TOTAL_TIMEOUT_NANOS,
+                ignoreResult, XResult.RequestType.AUTO_SP, BytesSql.getBytesSql(sql),
+                connection.getDefaultTokenKb(), null, null); // Only care about ignore or not.
+
+            lastRequest.set(result);
+            lastUserRequest.set(result);
+        } catch (Throwable t) {
+            lastException.set(t); // This exception should drop the connection.
+            throw t;
+        }
+
+        if (!ignoreResult) {
+            result.finishBlockMode();
+        }
     }
 
     private volatile long connectionId = -1;
@@ -2013,6 +2106,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
     private Boolean flagSingleShardOptimization = null;
     private Boolean flagFeedback = null;
     private Boolean flagRawString = null;
+    private Boolean flagXRPC = null;
 
     public boolean supportMessageTimestamp() {
         // disabled in XConnectionManager when galaxy protocol
@@ -2041,7 +2135,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             }
         } else if (client.getBaseVersion() == XClient.DnBaseVersion.DN_RDS_80_X_CLUSTER) {
             return flagMessageTimestamp = true; // Enable by default.
-        } else if (XConfig.OPEN_XRPC_PROTOCOL) {
+        } else if (isXRPC()) {
             return flagMessageTimestamp = true; // Enable by default.
         }
         return flagMessageTimestamp = false;
@@ -2074,7 +2168,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             }
         } else if (client.getBaseVersion() == XClient.DnBaseVersion.DN_RDS_80_X_CLUSTER) {
             return flagQueryCache = true; // Enable by default.
-        } else if (XConfig.OPEN_XRPC_PROTOCOL) {
+        } else if (isXRPC()) {
             return flagQueryCache = true; // Enable by default.
         }
         return flagQueryCache = false;
@@ -2107,7 +2201,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             }
         } else if (client.getBaseVersion() == XClient.DnBaseVersion.DN_RDS_80_X_CLUSTER) {
             return flagQueryChunk = true; // Enable by default.
-        } else if (XConfig.OPEN_XRPC_PROTOCOL) {
+        } else if (isXRPC()) {
             return flagQueryChunk = true; // Enable by default.
         }
         return flagQueryChunk = false;
@@ -2141,7 +2235,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             }
         } else if (client.getBaseVersion() == XClient.DnBaseVersion.DN_RDS_80_X_CLUSTER) {
             return flagSingleShardOptimization = true; // Enable by default.
-        } else if (XConfig.OPEN_XRPC_PROTOCOL) {
+        } else if (isXRPC()) {
             return flagSingleShardOptimization = true; // Enable by default.
         }
         return flagSingleShardOptimization = false;
@@ -2174,7 +2268,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                 XLog.XLogLogger.error(this + " unknown xdb minor version: " + minor);
             }
         } else if (client.getBaseVersion() == XClient.DnBaseVersion.DN_RDS_80_X_CLUSTER) {
-            return flagFeedback = true; // Enable by default.
+            return flagFeedback = false; // Disable by default.
         }
         return flagFeedback = false;
     }
@@ -2206,11 +2300,27 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                 XLog.XLogLogger.error(this + " unknown xdb minor version: " + minor);
             }
         } else if (client.getBaseVersion() == XClient.DnBaseVersion.DN_RDS_80_X_CLUSTER) {
-            return flagRawString = false; // Disable by default.
-        } else if (XConfig.OPEN_XRPC_PROTOCOL) {
+            return flagRawString = true; // Enable by default.
+        } else if (isXRPC()) {
             return flagRawString = true; // Enable by default.
         }
         return flagRawString = false;
+    }
+
+    public boolean isXRPC() {
+        if (flagXRPC != null) {
+            return flagXRPC;
+        }
+
+        if (!client.isActive()) {
+            return false; // Initializing.
+        }
+
+        final Object newRpc = client.getGlobalVariablesL().get("new_rpc");
+        if (newRpc instanceof String && ((String) newRpc).equalsIgnoreCase("ON")) {
+            return flagXRPC = true;
+        }
+        return flagXRPC = false;
     }
 
     /**

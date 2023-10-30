@@ -25,7 +25,9 @@ import com.alibaba.polardbx.common.datatype.RawBytesDecimalUtils;
 import com.alibaba.polardbx.common.datatype.UInt64Utils;
 import com.alibaba.polardbx.common.exception.TddlRuntimeException;
 import com.alibaba.polardbx.common.exception.code.ErrorCode;
+import com.alibaba.polardbx.common.utils.BigDecimalUtil;
 import com.alibaba.polardbx.common.utils.Pair;
+import com.alibaba.polardbx.common.utils.time.MySQLTimeConverter;
 import com.alibaba.polardbx.common.utils.time.MySQLTimeConverter;
 import com.alibaba.polardbx.common.utils.time.MySQLTimeTypeUtil;
 import com.alibaba.polardbx.common.utils.time.core.MySQLTimeVal;
@@ -36,7 +38,7 @@ import com.alibaba.polardbx.common.utils.time.core.OriginalTimestamp;
 import com.alibaba.polardbx.common.utils.time.core.TimeStorage;
 import com.alibaba.polardbx.common.utils.time.parser.TimeParseStatus;
 import com.alibaba.polardbx.rpc.jdbc.CharsetMapping;
-import com.alibaba.polardbx.rpc.utils.LongUtil;
+import com.alibaba.polardbx.common.utils.LongUtil;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.CodedInputStream;
 import com.mysql.cj.polarx.protobuf.PolarxResultset;
@@ -45,10 +47,12 @@ import org.apache.hadoop.hive.ql.exec.vector.ColumnVector;
 import org.apache.hadoop.hive.ql.exec.vector.DoubleColumnVector;
 import org.apache.hadoop.hive.ql.exec.vector.LongColumnVector;
 
+import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
+import java.nio.charset.Charset;
 import java.sql.Types;
 import java.time.ZoneId;
 import java.util.Arrays;
@@ -61,6 +65,7 @@ import java.util.function.BiFunction;
  */
 public class XResultUtil {
 
+    private static final Charset LATIN1 = Charset.forName("LATIN1");
     private static final byte[] EMPTY_BYTES = new byte[0];
 
     public static final int COLUMN_FLAGS_UINT_ZEROFILL = 0x0001;
@@ -515,8 +520,8 @@ public class XResultUtil {
                     isUtf8 = false;
                 }
 
-                if (null == mysqlCharset || mysqlCharset.equalsIgnoreCase(targetCharset) || (isUtf8 && isUtf8(
-                    targetCharset))) {
+                if (null == mysqlCharset || (isUtf8 && isUtf8(targetCharset))
+                    || mysqlCharset.equalsIgnoreCase(targetCharset)) {
                     // Direct copy.
                     return stream.readRawBytes(data.size() - 1);
                 }
@@ -596,8 +601,7 @@ public class XResultUtil {
                 mysqlDateTime.setSecond(seconds);
                 mysqlDateTime.setSecondPart(nanos);
                 return mysqlDateTime
-                    .toDatetimeString(Math.min(MySQLTimeTypeUtil.MAX_FRACTIONAL_SCALE, meta.getFractionalDigits()))
-                    .getBytes();
+                    .fastToDatetimeBytes(Math.min(MySQLTimeTypeUtil.MAX_FRACTIONAL_SCALE, meta.getFractionalDigits()));
             } else {
                 switch (meta.getOriginalType()) {
                 case MYSQL_TYPE_DATE:
@@ -608,7 +612,7 @@ public class XResultUtil {
                     mysqlDateTime.setYear(year);
                     mysqlDateTime.setMonth(month);
                     mysqlDateTime.setDay(day);
-                    return mysqlDateTime.toDateString().getBytes();
+                    return mysqlDateTime.fastToDateBytes();
 
                 case MYSQL_TYPE_DATETIME:
                 case MYSQL_TYPE_DATETIME2:
@@ -621,8 +625,8 @@ public class XResultUtil {
                     mysqlDateTime.setMonth(month);
                     mysqlDateTime.setDay(day);
                     return mysqlDateTime
-                        .toDatetimeString(Math.min(MySQLTimeTypeUtil.MAX_FRACTIONAL_SCALE, meta.getFractionalDigits()))
-                        .getBytes();
+                        .fastToDatetimeBytes(
+                            Math.min(MySQLTimeTypeUtil.MAX_FRACTIONAL_SCALE, meta.getFractionalDigits()));
 
                 default:
                     throw new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_RESULT,
@@ -696,9 +700,9 @@ public class XResultUtil {
         case DECIMAL: {
             byte scale = stream.readRawByte();
             // we allocate an extra char for the sign
-            CharBuffer unscaledString = CharBuffer.allocate(2 * stream.getBytesUntilLimit());
-            unscaledString.position(1);
-            byte sign = 0;
+            ByteArrayOutputStream byteStream = new ByteArrayOutputStream(2 * stream.getBytesUntilLimit());
+            byteStream.write('+');
+            byte sign;
             // read until we encounter the sign bit
             while (true) {
                 int b = 0xFF & stream.readRawByte();
@@ -706,34 +710,31 @@ public class XResultUtil {
                     sign = (byte) (b >> 4);
                     break;
                 }
-                unscaledString.append((char) ((b >> 4) + '0'));
+                byteStream.write((char) ((b >> 4) + '0'));
                 if ((b & 0x0f) > 9) {
                     sign = (byte) (b & 0x0f);
                     break;
                 }
-                unscaledString.append((char) ((b & 0x0f) + '0'));
+                byteStream.write((char) ((b & 0x0f) + '0'));
             }
             if (stream.getBytesUntilLimit() > 0) {
                 throw new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_RESULT,
                     "Did not read all bytes while decoding decimal. Bytes left: " + stream.getBytesUntilLimit());
             }
+            byte[] byteStrNum = byteStream.toByteArray();
             switch (sign) {
             case 0xa:
             case 0xc:
             case 0xe:
             case 0xf:
-                unscaledString.put(0, '+');
+                byteStrNum[0] = '+';
                 break;
             case 0xb:
             case 0xd:
-                unscaledString.put(0, '-');
+                byteStrNum[0] = '-';
                 break;
             }
-            // may have filled the CharBuffer or one remaining. need to remove it before toString()
-            int characters = unscaledString.position();
-            unscaledString.clear(); // reset position
-            return new BigDecimal(new BigInteger(unscaledString.subSequence(0, characters).toString()), scale)
-                .toString().getBytes();
+            return BigDecimalUtil.fastGetBigDecimalStringBytes(byteStrNum, scale);
         }
 
         default:
@@ -987,8 +988,7 @@ public class XResultUtil {
                     MysqlDateTime mysqlDateTime = new MysqlDateTime(year, month, day, hours, minutes, seconds, nanos);
                     TimeParseStatus timeParseStatus = new TimeParseStatus();
                     MySQLTimeVal timeVal =
-                        MySQLTimeConverter
-                        .convertDatetimeToTimestampWithoutCheck(mysqlDateTime, timeParseStatus,
+                        MySQLTimeConverter.convertDatetimeToTimestampWithoutCheck(mysqlDateTime, timeParseStatus,
                             timezone);
                     if (timeVal == null) {
                         // for error time value, set to zero.
@@ -1313,6 +1313,4 @@ public class XResultUtil {
         timeVal.setNano(nano);
         return timeVal;
     }
-
-
 }

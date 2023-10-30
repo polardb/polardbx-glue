@@ -285,8 +285,12 @@ public class XResultSet implements BufferResultSet {
     public Object getObject(int columnIndex) throws SQLException {
         List<PolarxResultset.ColumnMetaData> meta = result.getMetaData();
         List<ByteString> data = result.current().getRow();
-        if (null == data || null == meta || data.size() != meta.size()) {
-            throw new SQLException("Bad result.");
+        if (data == null || null == meta) {
+            throw new SQLException("Bad result, data or meta is null.");
+        }
+        if (data.size() != meta.size()) {
+            throw new SQLException(String.format("Bad result, data size(%d) is not equal meta size(%d).",
+                data.size(), meta.size()));
         }
         if (columnIndex > meta.size()) {
             throw new SQLException("Bad columnIndex.");

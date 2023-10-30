@@ -54,7 +54,7 @@ public class SessionPerfItem {
     private String lastRequestType;
     private String lastRequestStatus;
     private long lastRequestFetchCount = 0;
-    private long lastRequestTokenCount = 0;
+    private long lastRequestTokenSize = 0;
     private long lastRequestWorkingNanos = 0;
     private long lastRequestDataPktResponseNanos = 0;
     private long lastRequestResponseNanos = 0;
@@ -258,12 +258,12 @@ public class SessionPerfItem {
         this.lastRequestFetchCount = lastRequestFetchCount;
     }
 
-    public long getLastRequestTokenCount() {
-        return lastRequestTokenCount;
+    public long getLastRequestTokenSize() {
+        return lastRequestTokenSize;
     }
 
-    public void setLastRequestTokenCount(long lastRequestTokenCount) {
-        this.lastRequestTokenCount = lastRequestTokenCount;
+    public void setLastRequestTokenSize(long lastRequestTokenSize) {
+        this.lastRequestTokenSize = lastRequestTokenSize;
     }
 
     public long getLastRequestWorkingNanos() {

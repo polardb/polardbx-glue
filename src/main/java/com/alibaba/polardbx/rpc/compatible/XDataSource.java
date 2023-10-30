@@ -16,13 +16,13 @@
 
 package com.alibaba.polardbx.rpc.compatible;
 
+import com.alibaba.polardbx.common.exception.NotSupportException;
+import com.alibaba.polardbx.common.exception.TddlRuntimeException;
+import com.alibaba.polardbx.common.exception.code.ErrorCode;
 import com.alibaba.polardbx.rpc.XConfig;
 import com.alibaba.polardbx.rpc.pool.XClientPool;
 import com.alibaba.polardbx.rpc.pool.XConnection;
 import com.alibaba.polardbx.rpc.pool.XConnectionManager;
-import com.alibaba.polardbx.common.exception.NotSupportException;
-import com.alibaba.polardbx.common.exception.TddlRuntimeException;
-import com.alibaba.polardbx.common.exception.code.ErrorCode;
 
 import javax.sql.DataSource;
 import java.io.PrintWriter;
@@ -68,7 +68,10 @@ public class XDataSource implements DataSource {
         this.username = username;
         this.defaultDatabase = defaultDatabase;
         this.name = name;
-        XConnectionManager.getInstance().initializeDataSource(host, port, username, password);
+        // decode inst_id via key
+        final String[] split = name.split("#");
+        final String instInfo = split.length >= 2 ? split[1] : name;
+        XConnectionManager.getInstance().initializeDataSource(host, port, username, password, instInfo);
     }
 
     public void close() {

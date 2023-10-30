@@ -65,6 +65,9 @@ message StmtExecute {
   optional uint64 snapshot_seq = 10;
   optional uint64 commit_seq = 11;
   optional bool use_cts_transaction = 15;
+
+  // capabilities
+  optional uint64 capabilities = 17;
 }
 
 message GalaxyPrepareTableData {
@@ -101,6 +104,9 @@ message GalaxyPrepareExecute {
   };
   optional ResultSetType result_set_type = 15 [default = ROW];
   optional bool feed_back = 16 [default = false];
+
+  // capabilities
+  optional uint64 capabilities = 18;
 }
 
 // statement executed successful

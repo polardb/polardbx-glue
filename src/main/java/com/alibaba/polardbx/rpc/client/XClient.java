@@ -20,6 +20,7 @@ import com.alibaba.polardbx.common.eventlogger.EventLogger;
 import com.alibaba.polardbx.common.eventlogger.EventType;
 import com.alibaba.polardbx.common.exception.TddlRuntimeException;
 import com.alibaba.polardbx.common.exception.code.ErrorCode;
+import com.alibaba.polardbx.common.properties.DynamicConfig;
 import com.alibaba.polardbx.common.utils.GeneralUtil;
 import com.alibaba.polardbx.common.utils.Pair;
 import com.alibaba.polardbx.common.utils.encrypt.SecurityUtil;
@@ -85,6 +86,8 @@ public class XClient implements AutoCloseable {
     private final long createNanos = System.nanoTime();
     // Random delay in 10min.
     private final long randomDelay = ThreadLocalRandom.current().nextLong(600_000_000_000L);
+    // Reusable mark.
+    private final AtomicBoolean reusable = new AtomicBoolean(true);
 
     // Fatal error record.
     private final AtomicReference<Throwable> fatalError = new AtomicReference<>(null);
@@ -566,7 +569,7 @@ public class XClient implements AutoCloseable {
     }
 
     public void refreshVariables(AtomicLong sessionIdGenerator, long timeoutNanos) throws Exception {
-        if (sessionVariablesL != null && globalVariablesL != null &&
+        if (sessionVariablesL != null && globalVariablesL != null && lastVariablesNanos != 0 &&
             System.nanoTime() - lastVariablesNanos
                 < XConnectionManager.getInstance().getSessionAgingNanos()) {
             return;
@@ -645,7 +648,20 @@ public class XClient implements AutoCloseable {
         refreshVariables(sessionIdGenerator, timeoutNanos);
         state = ClientState.Ready;
 
-        EventLogger.log(EventType.XRPC_NEW_VALID_CLIENT, "New authed " + this);
+        // show info to event log
+        final boolean xrpc;
+        if (globalVariablesL != null) {
+            final Object val = globalVariablesL.get("new_rpc");
+            xrpc = val instanceof String && ((String) val).equalsIgnoreCase("ON");
+        } else {
+            xrpc = false;
+        }
+        final String instId = XConnectionManager.getInstance().getInstId().get();
+        EventLogger.log(EventType.XRPC_NEW_VALID_CLIENT,
+            "New authed " + this
+                + " @@ " + String.join(",", pool.getInstInfo())
+                + " @@ " + (null == instId ? "unknown" : instId)
+                + " @@ " + (xrpc ? "XRPC" : "XPROTO"));
         XLog.XLogLogger.info("New client: " + this);
     }
 
@@ -747,7 +763,15 @@ public class XClient implements AutoCloseable {
 
     public boolean isOld() {
         return System.nanoTime() - createNanos - randomDelay >
-            3 * XConnectionManager.getInstance().getSessionAgingNanos();
+            DynamicConfig.getInstance().getXprotoTcpAging() * 1000_000_000L;
+    }
+
+    public void markNotReusable() {
+        reusable.set(false);
+    }
+
+    public boolean reusable() {
+        return reusable.get();
     }
 
     public boolean isActive() {
@@ -782,6 +806,7 @@ public class XClient implements AutoCloseable {
                 XConnectionManager.getInstance().isEnableAutoCommitOptimize())) {
                 connection.init(timeoutNanos);
                 connection.setNetworkTimeoutNanos(timeoutNanos);
+                connection.init(timeoutNanos);
                 XResult result = connection.execQuery("/*X probe*/ select 1");
                 long count = 0;
                 while (result.next() != null) {
@@ -794,7 +819,6 @@ public class XClient implements AutoCloseable {
                     probeFailTimes.set(0);
                     return true;
                 }
-                return probeFailTimes.addAndGet(1) < XConfig.DEFAULT_PROBE_RETRY_TIMES;
             } catch (Throwable t) {
                 XLog.XLogLogger.error(t); // Just log and ignore.
             }

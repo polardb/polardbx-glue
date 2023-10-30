@@ -16,14 +16,18 @@
 
 package com.alibaba.polardbx.rpc.result.chunk.block;
 
+import com.alibaba.polardbx.common.exception.TddlRuntimeException;
+import com.alibaba.polardbx.common.exception.code.ErrorCode;
+import com.alibaba.polardbx.common.utils.time.core.MysqlDateTime;
+import com.alibaba.polardbx.common.utils.time.core.TimeStorage;
+import com.alibaba.polardbx.common.utils.time.parser.StringTimeParser;
 import com.alibaba.polardbx.rpc.result.chunk.AbstractBlockDecoder;
 import com.alibaba.polardbx.rpc.result.chunk.Decimal;
 import com.alibaba.polardbx.rpc.result.chunk.Slice;
 import com.mysql.cj.polarx.protobuf.PolarxResultset;
-import com.alibaba.polardbx.common.exception.TddlRuntimeException;
-import com.alibaba.polardbx.common.exception.code.ErrorCode;
 
 import java.math.BigDecimal;
+import java.sql.Types;
 
 /**
  * @version 1.0
@@ -71,16 +75,19 @@ public class StringBlockDecoder extends AbstractBlockDecoder {
     @Override
     public long getLong() throws Exception {
         // Optimize via byte operation.
+        int sign = 1;
         long val = 0;
         for (int i = 0; i < currentValue.getLength(); ++i) {
             final byte b = currentValue.getData()[currentValue.getOffset() + i];
-            if (b >= '0' && b <= '9') {
+            if (0 == i && '-' == b) {
+                sign = -1;
+            } else if (b >= '0' && b <= '9') {
                 val = 10 * val + (b - '0');
             } else {
                 throw new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_RESULT, "Bad string to long.");
             }
         }
-        return val;
+        return sign * val;
     }
 
     @Override
@@ -95,8 +102,13 @@ public class StringBlockDecoder extends AbstractBlockDecoder {
 
     @Override
     public long getDate() throws Exception {
-        // TODO: Optimize this via new data type.
-        return super.getDate();
+        // string to date
+        final byte[] bytes = new byte[currentValue.getLength()];
+        System.arraycopy(currentValue.getData(), currentValue.getOffset(), bytes, 0, currentValue.getLength());
+        MysqlDateTime t = StringTimeParser.parseString(
+            bytes,
+            Types.DATE);
+        return TimeStorage.writeDate(t);
     }
 
     @Override
@@ -106,14 +118,24 @@ public class StringBlockDecoder extends AbstractBlockDecoder {
 
     @Override
     public long getTime() throws Exception {
-        // TODO: Optimize this via new data type.
-        return super.getTime();
+        // string to time
+        final byte[] bytes = new byte[currentValue.getLength()];
+        System.arraycopy(currentValue.getData(), currentValue.getOffset(), bytes, 0, currentValue.getLength());
+        MysqlDateTime t = StringTimeParser.parseString(
+            bytes,
+            Types.TIME);
+        return TimeStorage.writeTime(t);
     }
 
     @Override
     public long getDatetime() throws Exception {
-        // TODO: Optimize this via new data type.
-        return super.getDatetime();
+        // string to time
+        final byte[] bytes = new byte[currentValue.getLength()];
+        System.arraycopy(currentValue.getData(), currentValue.getOffset(), bytes, 0, currentValue.getLength());
+        MysqlDateTime t = StringTimeParser.parseString(
+            bytes,
+            Types.TIMESTAMP);
+        return TimeStorage.writeTimestamp(t);
     }
 
     @Override

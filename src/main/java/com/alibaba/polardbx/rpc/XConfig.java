@@ -66,9 +66,6 @@ public class XConfig {
     public final static long PRE_ALLOC_CONNECTION_TIMEOUT_NANOS = 2000 * 1000000L; // 2s
     public final static long MIN_INIT_TIMEOUT_NANOS = 1000 * 1000000L; // 1s
 
-    public final static int DEFAULT_QUERY_TOKEN = 10000;
-    public final static long DEFAULT_PIPE_BUFFER_SIZE = 256 * 1024 * 1024; // 256MB
-
     public final static boolean VIP_WITH_X_PROTOCOL = false;
 
     public static boolean GALAXY_X_PROTOCOL = true;

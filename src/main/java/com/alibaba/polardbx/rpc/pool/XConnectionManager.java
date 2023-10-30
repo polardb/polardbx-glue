@@ -43,6 +43,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
 
 /**
@@ -82,9 +83,6 @@ public class XConnectionManager {
     private volatile boolean enableChecker = true;
     private volatile long maxPacketSize = 64 * 1024 * 1024L; // 64MB
 
-    private volatile int defaultQueryToken = XConfig.DEFAULT_QUERY_TOKEN;
-    private volatile long defaultPipeBufferSize = XConfig.DEFAULT_PIPE_BUFFER_SIZE;
-
     private final ScheduledExecutorService service = ExecutorUtil.createScheduler(1,
         new NamedThreadFactory("XConnection-Check-Scheduler"),
         new ThreadPoolExecutor.CallerRunsPolicy());
@@ -94,6 +92,9 @@ public class XConnectionManager {
 
     private ThreadPoolExecutor checkerThreads = null;
     private final AtomicLong lastCheckTime = new AtomicLong(0);
+
+    // instId
+    private final AtomicReference<String> instId = new AtomicReference<>(null);
 
     private XConnectionManager(int maxClientPerInstance, int maxSessionPerClient, int maxPooledSessionPerInstance) {
         this.maxClientPerInstance = maxClientPerInstance;
@@ -404,27 +405,15 @@ public class XConnectionManager {
         this.maxPacketSize = maxPacketSize;
     }
 
-    public int getDefaultQueryToken() {
-        return defaultQueryToken;
-    }
-
-    public void setDefaultQueryToken(int defaultQueryToken) {
-        this.defaultQueryToken = defaultQueryToken;
-    }
-
-    public long getDefaultPipeBufferSize() {
-        return defaultPipeBufferSize;
-    }
-
-    public void setDefaultPipeBufferSize(long defaultPipeBufferSize) {
-        this.defaultPipeBufferSize = defaultPipeBufferSize;
-    }
-
     public AtomicLong getIdGenerator() {
         return idGenerator;
     }
 
-    public void initializeDataSource(String host, int port, String username, String password) {
+    public AtomicReference<String> getInstId() {
+        return instId;
+    }
+
+    public void initializeDataSource(String host, int port, String username, String password, String instInfo) {
         synchronized (instancePool) {
             final XClientPool clientPool =
                 instancePool
@@ -434,6 +423,7 @@ public class XConnectionManager {
             XLog.XLogLogger.info("XConnectionManager new datasource to "
                 + username + "@" + host + ":" + port + " id is " + cnt
                 + " NOW_GLOBAL_SESSION: " + XSession.GLOBAL_COUNTER.get());
+            clientPool.getInstInfo().add(instInfo);
         }
     }
 
@@ -491,6 +481,12 @@ public class XConnectionManager {
 
     public XClientPool getClientPool(String host, int port, String username) {
         return instancePool.get(digest(host, port, username));
+    }
+
+    public void reload() {
+        for (XClientPool clientPool : instancePool.values()) {
+            clientPool.reload();
+        }
     }
 
     public XConnection getConnection(String host, int port, String username, String defaultDB, long timeoutNanos)

@@ -178,6 +178,18 @@ public class XUtil {
         return scalarBuilder.build();
     }
 
+    public static PolarxDatatypes.Scalar genIdentifierScalarStringCompatible(String identifier) {
+        final PolarxDatatypes.Scalar.String.Builder stringBuilder = PolarxDatatypes.Scalar.String.newBuilder();
+        final PolarxDatatypes.Scalar.Builder scalarBuilder = PolarxDatatypes.Scalar.newBuilder();
+
+        // Default utf8mb4.
+        stringBuilder.setCollation(45); // utf8mb4_general_ci
+        stringBuilder.setValue(ByteString.copyFromUtf8(identifier));
+        scalarBuilder.setType(PolarxDatatypes.Scalar.Type.V_IDENTIFIER);
+        scalarBuilder.setVString(stringBuilder);
+        return scalarBuilder.build();
+    }
+
     private static final BigInteger ZERO = new BigInteger("0");
     private static final BigInteger LONG_LIMIT = new BigInteger("18446744073709551616");
 

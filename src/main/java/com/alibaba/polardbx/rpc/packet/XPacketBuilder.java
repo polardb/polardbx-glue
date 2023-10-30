@@ -20,6 +20,7 @@ import com.alibaba.polardbx.common.exception.TddlRuntimeException;
 import com.alibaba.polardbx.common.exception.code.ErrorCode;
 import com.alibaba.polardbx.common.jdbc.BytesSql;
 import com.google.protobuf.ByteString;
+import com.googlecode.protobuf.format.JsonFormat;
 import com.mysql.cj.polarx.protobuf.PolarxSql;
 import com.mysql.cj.x.protobuf.Polarx;
 import com.mysql.cj.x.protobuf.PolarxExecPlan;
@@ -93,6 +94,9 @@ public class XPacketBuilder {
         if (planBuilder != null) {
             assert plan != null;
             planBuilder.setPlan(plan);
+            // and audit str
+            final JsonFormat format = new JsonFormat();
+            planBuilder.setAuditStr(ByteString.copyFromUtf8(format.printToString(planBuilder.getPlan())));
             return new XPacket(sessionId, Polarx.ClientMessages.Type.EXEC_PLAN_READ_VALUE, planBuilder.build());
         } else if (sqlBuilder != null) {
             assert sql != null;

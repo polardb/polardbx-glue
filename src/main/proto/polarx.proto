@@ -82,6 +82,8 @@ message ClientMessages {
 
     GET_TSO = 113;
 
+    AUTO_SP = 115;
+
     MSG_MAX = 127;
   }
 }
