@@ -5,7 +5,7 @@
 [中文文档](docs/zh_CN/README.md)
 
 ## What is PolarDB-X Glue ?
-PolarDB-X Glue is an extension to MySQL Connector/J 8.0.
+PolarDB-X Glue is an extension to MySQL Connector/J 8.0. 
 
 PolarDB-X Glue uses asynchronous requests, session and connection decoupling, instance-level connection pool, traffic control and other mechanisms. By working with [PolarDB-X Engine](https://github.com/polardb/polardbx-engine), this extension can improve the network efficiency between third-party systems and PolarDB-X Engine and improve the stability in high concurrency multi-connection scenarios.
 

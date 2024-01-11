@@ -480,7 +480,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
     }
 
     public static String toJavaEncoding(String encoding) {
-        if (encoding.equalsIgnoreCase("utf8mb4")) {
+        if (encoding.startsWith("utf8mb")) {
             return "utf8";
         } else if (encoding.equalsIgnoreCase("binary")) {
             return "iso_8859_1";
