@@ -40,6 +40,7 @@ public class XDataSource implements DataSource {
     private final String host;
     private final int port;
     private final String username;
+    private final String password;
     private final String defaultDatabase;
     private final String name;
 
@@ -66,6 +67,7 @@ public class XDataSource implements DataSource {
         this.host = host;
         this.port = port;
         this.username = username;
+        this.password = password;
         this.defaultDatabase = defaultDatabase;
         this.name = name;
         // decode inst_id via key
@@ -75,7 +77,7 @@ public class XDataSource implements DataSource {
     }
 
     public void close() {
-        XConnectionManager.getInstance().deinitializeDataSource(host, port, username);
+        XConnectionManager.getInstance().deinitializeDataSource(host, port, username, password);
     }
 
     public String getUsername() {
@@ -172,15 +174,15 @@ public class XDataSource implements DataSource {
     }
 
     public XClientPool.XStatus getStatus() {
-        return XConnectionManager.getInstance().getClientPool(host, port, username).getStatus();
+        return XConnectionManager.getInstance().getClientPool(host, port, username, password).getStatus();
     }
 
     public String getDigest() {
-        return XConnectionManager.digest(host, port, username);
+        return XConnectionManager.digest(host, port, username, password);
     }
 
     public XClientPool getClientPool() {
-        return XConnectionManager.getInstance().getClientPool(host, port, username);
+        return XConnectionManager.getInstance().getClientPool(host, port, username, password);
     }
 
     @Override
@@ -188,7 +190,7 @@ public class XDataSource implements DataSource {
         XConnection connection = null;
         try {
             connection = XConnectionManager.getInstance()
-                .getConnection(host, port, username, defaultDatabase, getConnTimeoutNanos);
+                .getConnection(host, port, username, password, defaultDatabase, getConnTimeoutNanos);
             connection.setDataSource(this);
             if (defaultEncodingMySQL != null && !defaultEncodingMySQL.isEmpty() &&
                 !defaultEncodingMySQL.equalsIgnoreCase(connection.getSession().getRequestEncodingMySQL())) {
@@ -202,10 +204,10 @@ public class XDataSource implements DataSource {
             return connection;
         } catch (Exception e) {
             if (connection != null) {
-                connection.setLastException(e);
+                connection.setLastException(e, true);
                 connection.close();
             }
-            throw new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_CLIENT, this + " " + e.getMessage());
+            throw new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_CLIENT, e, this + " " + e.getMessage());
         }
     }
 

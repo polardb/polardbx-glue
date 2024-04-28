@@ -20,6 +20,7 @@ import com.alibaba.polardbx.common.constants.ServerVariables;
 import com.alibaba.polardbx.common.exception.TddlRuntimeException;
 import com.alibaba.polardbx.common.exception.code.ErrorCode;
 import com.alibaba.polardbx.common.jdbc.BytesSql;
+import com.alibaba.polardbx.common.utils.GeneralUtil;
 import com.alibaba.polardbx.common.utils.TStringUtil;
 import com.alibaba.polardbx.common.utils.logger.Logger;
 import com.alibaba.polardbx.common.utils.logger.LoggerFactory;
@@ -42,6 +43,7 @@ import com.google.common.collect.Sets;
 import com.google.protobuf.ByteString;
 import com.googlecode.protobuf.format.JsonFormat;
 import com.mysql.cj.polarx.protobuf.PolarxExpect;
+import com.mysql.cj.polarx.protobuf.PolarxPhysicalBackfill;
 import com.mysql.cj.polarx.protobuf.PolarxSession;
 import com.mysql.cj.polarx.protobuf.PolarxSql;
 import com.mysql.cj.x.protobuf.Polarx;
@@ -75,6 +77,9 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
 
     public static final AtomicInteger GLOBAL_COUNTER = new AtomicInteger(0);
     public static final ByteString EXPLAIN_PRE = ByteString.copyFromUtf8("explain ");
+
+    private static final Exception CANCEL_EXCEPTION = new Exception("Query was canceled.");
+    private static final Exception KILL_EXCEPTION = new Exception("Session was killed.");
 
     /**
      * Session identifier.
@@ -125,6 +130,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
     private String lazyUseDB = null;
 
     private boolean lazyUseCtsTransaction = false;
+    private boolean lazyMarkDistributed = false;
     private long lazySnapshotSeq = -1L;
     private long lazyCommitSeq = -1L;
 
@@ -247,7 +253,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             if (needClose) {
                 GLOBAL_COUNTER.getAndDecrement();
                 if (!isXRPC()) {
-                    // in old Xproto, should kill before close the session to prevent
+                    // in old Xproto, should kill before close the session to prevent result set leak
                     final XPacket packet =
                         new XPacket(sessionId, Polarx.ClientMessages.Type.SESS_KILL_VALUE,
                             PolarxSession.KillSession.newBuilder()
@@ -316,9 +322,21 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
         return lastException.get();
     }
 
-    public Throwable setLastException(Throwable lastException) {
-        this.lastException.set(lastException);
+    public Throwable setLastException(Throwable lastException, boolean forceReplace) {
+        if (lastException != null && forceReplace) {
+            this.lastException.set(lastException);
+        } else {
+            this.lastException.compareAndSet(null, lastException);
+        }
         return lastException;
+    }
+
+    public boolean resetExceptionFromCancel() {
+        final Throwable throwable = lastException.get();
+        if (throwable == CANCEL_EXCEPTION) {
+            return lastException.compareAndSet(throwable, null);
+        }
+        return false;
     }
 
     /**
@@ -449,8 +467,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             }
         } catch (Throwable e) {
             // This is fatal error.
-            lastException.set(e);
-            throw e;
+            throw GeneralUtil.nestedException(setLastException(e, true));
         }
     }
 
@@ -476,6 +493,10 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
         if (lazyCommitSeq != -1) {
             historySql.add("msg_commit_seq=" + lazyCommitSeq);
             sessionSql.add("msg_commit_seq=" + lazyCommitSeq);
+        }
+        if (lazyMarkDistributed) {
+            historySql.add("msg_mark_distributed=ON");
+            sessionSql.add("msg_mark_distributed=ON");
         }
     }
 
@@ -573,7 +594,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                 if (null == isolationString) {
                     isolation = Connection.TRANSACTION_READ_COMMITTED;
                 } else {
-                    switch (isolationString) {
+                    switch (isolationString.toUpperCase()) {
                     case "READ-UNCOMMITTED":
                         isolation = Connection.TRANSACTION_READ_UNCOMMITTED;
                         break;
@@ -640,6 +661,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
 
         Map<String, Object> serverVariables = null;
         Set<String> serverVariablesNeedToRemove = Sets.newHashSet();
+        boolean resetSqlLogBin = false;
 
         if (!isGlobal) {
             // 这个连接没设置过的变量，需要用global值复原
@@ -792,8 +814,15 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
         for (String key : serverVariablesNeedToRemove) {
             if (!first) {
                 query.append(", ");
+            } else {
+                first = false;
             }
-            query.append("@").append(key).append("=").append("NULL");
+            if (key.equalsIgnoreCase("sql_log_bin")) {
+                query.append(key).append("=").append("'ON'");
+                resetSqlLogBin = true;
+            } else {
+                query.append("@").append(key).append("=").append("NULL");
+            }
         }
 
         if (!first) { // 需要确保SET指令是完整的, 而不是只有一个SET前缀.
@@ -804,6 +833,10 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             try {
                 // This can ignore, because we treat ignorable error as fatal.
                 execUpdate(connection, BytesSql.getBytesSql(query.toString()), null, args, true, null);
+            } catch (Exception ex) {
+                if (resetSqlLogBin) {
+                    connection.setLastException(ex, true);
+                }
             } finally {
                 if (isStashed) {
                     stashPopTransactionSequence();
@@ -813,6 +846,10 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             // Refresh cache after changed.
             resetConnectionInfoCache();
             if (!isGlobal) {
+                for (String key : serverVariablesNeedToRemove) {
+                    sessionVariables.remove(key);
+                    sessionVariablesChanged.remove(key);
+                }
                 for (Map.Entry<String, Object> e : tmpVariablesChanged.entrySet()) {
                     sessionVariables.put(e.getKey(), e.getValue());
                     sessionVariablesChanged.put(e.getKey(), e.getValue());
@@ -923,8 +960,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                     lastIgnore = false;
                 } catch (Throwable e) {
                     XLog.XLogLogger.error(this + " failed to close expect.");
-                    lastException.set(e);
-                    XLog.XLogLogger.error(e); // This is fatal error and should never happen.
+                    XLog.XLogLogger.error(setLastException(e, true)); // This is fatal error and should never happen.
                 }
             }
             req = lastRequest.get();
@@ -935,8 +971,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                 req.waitFinish(true);
             } catch (Throwable e) {
                 XLog.XLogLogger.error(this + " failed to flush ignorable.");
-                lastException.set(e);
-                XLog.XLogLogger.error(e); // This is fatal error and should never happen.
+                XLog.XLogLogger.error(setLastException(e, true)); // This is fatal error and should never happen.
             }
         }
     }
@@ -962,7 +997,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             return false;
         }
         return Status.Ready == status // Read only, and no status lock needed.
-            && null == lastException.get()
+            && null == getLastException()
             && (null == lastRequest.get() || lastRequest.get().isGoodAndDone())
             // Must all done and no pending ignorable.
             && historySql.size() < 1000
@@ -975,10 +1010,12 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
         if (reusable() && 0 == packetQueue.count()) {
             lastUserRequest.set(null);
             lastRequest.set(null);
-            lastException.set(null);
+            // lastException.set(null); never reset fatal error
             lastIgnore = false;
             lazySnapshotSeq = -1L;
             lazyCommitSeq = -1L;
+            lazyMarkDistributed = false;
+            lazyUseCtsTransaction = false;
             noCache = false;
             forceCache = false;
             chunkResult = false;
@@ -1007,7 +1044,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             client.send(packet, true);
         } finally {
             synchronized (this) {
-                lastException.set(new Exception("Query was canceled."));
+                setLastException(CANCEL_EXCEPTION, false);
             }
         }
     }
@@ -1073,7 +1110,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             client.send(packet, true);
         } finally {
             synchronized (this) {
-                lastException.set(new Exception("Session was killed."));
+                setLastException(KILL_EXCEPTION, true);
             }
         }
         if (pushKilled) {
@@ -1189,6 +1226,10 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
         this.lazyUseCtsTransaction = true;
     }
 
+    public void setLazyMarkDistributed() {
+        this.lazyMarkDistributed = true;
+    }
+
     public void setLazySnapshotSeq(long lazySnapshotSeq) {
         this.lazySnapshotSeq = lazySnapshotSeq;
     }
@@ -1200,6 +1241,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
     // Stash sequence info.
     private boolean isStashed = false;
     private boolean stashUseCtsTransaction = false;
+    private boolean stashMarkDistributed = false;
     private long stashSnapshotSeq = -1L;
     private long stashCommitSeq = -1L;
 
@@ -1209,9 +1251,11 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
         }
         isStashed = true;
         stashUseCtsTransaction = lazyUseCtsTransaction;
+        stashMarkDistributed = lazyMarkDistributed;
         stashSnapshotSeq = lazySnapshotSeq;
         stashCommitSeq = lazyCommitSeq;
         lazyUseCtsTransaction = false;
+        lazyMarkDistributed = false;
         lazySnapshotSeq = -1;
         lazyCommitSeq = -1;
         return true;
@@ -1220,6 +1264,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
     public void stashPopTransactionSequence() {
         isStashed = false;
         lazyUseCtsTransaction = stashUseCtsTransaction;
+        lazyMarkDistributed = stashMarkDistributed;
         lazySnapshotSeq = stashSnapshotSeq;
         lazyCommitSeq = stashCommitSeq;
     }
@@ -1374,6 +1419,15 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             }
             lazyUseCtsTransaction = false;
         }
+        if (lazyMarkDistributed) {
+            execPlan.setMarkDistributed(true);
+            if (null == extra) {
+                extra = "mark_distributed;";
+            } else {
+                extra += "mark_distributed;";
+            }
+            lazyMarkDistributed = false;
+        }
         if (lazySnapshotSeq != -1) {
             execPlan.setSnapshotSeq(lazySnapshotSeq);
             if (null == extra) {
@@ -1431,8 +1485,8 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                     connection.getDefaultTokenKb(), null, null));
             }
         } catch (Throwable t) {
-            lastException.set(t); // This exception should drop the connection.
-            throw t;
+            // This exception should drop the connection.
+            throw GeneralUtil.nestedException(setLastException(t, true));
         }
         // Finish block mode outside here so exception will not fatal the session.
         if (!ignoreResult && !connection.isStreamMode()) {
@@ -1562,33 +1616,9 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             builder.setResetError(!lastIgnore);
         }
         builder.setToken(connection.getDefaultTokenKb());
-        if (lazyUseCtsTransaction) {
-            builder.setUseCtsTransaction(true);
-            if (null == extra) {
-                extra = "use_cts;";
-            } else {
-                extra += "use_cts;";
-            }
-            lazyUseCtsTransaction = false;
-        }
-        if (lazySnapshotSeq != -1) {
-            builder.setSnapshotSeq(lazySnapshotSeq);
-            if (null == extra) {
-                extra = "snapshot=" + lazySnapshotSeq + ";";
-            } else {
-                extra += "snapshot=" + lazySnapshotSeq + ";";
-            }
-            lazySnapshotSeq = -1;
-        }
-        if (lazyCommitSeq != -1) {
-            builder.setCommitSeq(lazyCommitSeq);
-            if (null == extra) {
-                extra = "commit=" + lazyCommitSeq + ";";
-            } else {
-                extra += "commit=" + lazyCommitSeq + ";";
-            }
-            lazyCommitSeq = -1;
-        }
+
+        extra = setLazyTrxVariables(builder, extra);
+
         if (chunkResult && supportChunkResult()) {
             builder.setChunkResult(true);
         }
@@ -1627,8 +1657,8 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                     connection.getDefaultTokenKb(), null, null));
             }
         } catch (Throwable t) {
-            lastException.set(t); // This exception should drop the connection.
-            throw t;
+            // This exception should drop the connection.
+            throw GeneralUtil.nestedException(setLastException(t, true));
         }
         // Finish block mode outside here so exception will not fatal the session.
         if (!ignoreResult && !connection.isStreamMode()) {
@@ -1712,6 +1742,15 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             }
             lazyUseCtsTransaction = false;
         }
+        if (lazyMarkDistributed) {
+            builder.setMarkDistributed(true);
+            if (null == extra) {
+                extra = "mark_distributed;";
+            } else {
+                extra += "mark_distributed;";
+            }
+            lazyMarkDistributed = false;
+        }
         if (lazySnapshotSeq != -1) {
             builder.setSnapshotSeq(lazySnapshotSeq);
             if (null == extra) {
@@ -1769,8 +1808,8 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                     connection.getDefaultTokenKb(), null, null));
             }
         } catch (Throwable t) {
-            lastException.set(t); // This exception should drop the connection.
-            throw t;
+            // This exception should drop the connection.
+            throw GeneralUtil.nestedException(setLastException(t, true));
         }
         // Finish block mode outside here so exception will not fatal the session.
         if (!ignoreResult && (isUpdate || !connection.isStreamMode())) {
@@ -1844,33 +1883,9 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
         if (!XConfig.GALAXY_X_PROTOCOL) {
             builder.setResetError(!lastIgnore);
         }
-        if (lazyUseCtsTransaction) {
-            builder.setUseCtsTransaction(true);
-            if (null == extra) {
-                extra = "use_cts;";
-            } else {
-                extra += "use_cts;";
-            }
-            lazyUseCtsTransaction = false;
-        }
-        if (lazySnapshotSeq != -1) {
-            builder.setSnapshotSeq(lazySnapshotSeq);
-            if (null == extra) {
-                extra = "snapshot=" + lazySnapshotSeq + ";";
-            } else {
-                extra += "snapshot=" + lazySnapshotSeq + ";";
-            }
-            lazySnapshotSeq = -1;
-        }
-        if (lazyCommitSeq != -1) {
-            builder.setCommitSeq(lazyCommitSeq);
-            if (null == extra) {
-                extra = "commit=" + lazyCommitSeq + ";";
-            } else {
-                extra += "commit=" + lazyCommitSeq + ";";
-            }
-            lazyCommitSeq = -1;
-        }
+
+        extra = setLazyTrxVariables(builder, extra);
+
         if (connection.isWithFeedback() && supportFeedback()) {
             builder.setFeedBack(true);
         }
@@ -1911,14 +1926,54 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                     connection.getDefaultTokenKb(), null, null));
             }
         } catch (Throwable t) {
-            lastException.set(t); // This exception should drop the connection.
-            throw t;
+            // This exception should drop the connection.
+            throw GeneralUtil.nestedException(setLastException(t, true));
         }
         // Finish block mode outside here so exception will not fatal the session.
         if (!ignoreResult) {
             result.finishBlockMode();
         }
         return result;
+    }
+
+    private String setLazyTrxVariables(PolarxSql.StmtExecute.Builder builder, String extra) {
+        if (lazyUseCtsTransaction) {
+            builder.setUseCtsTransaction(true);
+            if (null == extra) {
+                extra = "use_cts;";
+            } else {
+                extra += "use_cts;";
+            }
+            lazyUseCtsTransaction = false;
+        }
+        if (lazyMarkDistributed) {
+            builder.setMarkDistributed(true);
+            if (null == extra) {
+                extra = "mark_distributed;";
+            } else {
+                extra += "mark_distributed;";
+            }
+            lazyMarkDistributed = false;
+        }
+        if (lazySnapshotSeq != -1) {
+            builder.setSnapshotSeq(lazySnapshotSeq);
+            if (null == extra) {
+                extra = "snapshot=" + lazySnapshotSeq + ";";
+            } else {
+                extra += "snapshot=" + lazySnapshotSeq + ";";
+            }
+            lazySnapshotSeq = -1;
+        }
+        if (lazyCommitSeq != -1) {
+            builder.setCommitSeq(lazyCommitSeq);
+            if (null == extra) {
+                extra = "commit=" + lazyCommitSeq + ";";
+            } else {
+                extra += "commit=" + lazyCommitSeq + ";";
+            }
+            lazyCommitSeq = -1;
+        }
+        return extra;
     }
 
     public synchronized long getTSO(XConnection connection, int count) throws SQLException {
@@ -1986,8 +2041,8 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             lastRequest.set(result);
             lastUserRequest.set(result);
         } catch (Throwable t) {
-            lastException.set(t); // This exception should drop the connection.
-            throw t;
+            // This exception should drop the connection.
+            throw GeneralUtil.nestedException(setLastException(t, true));
         }
         // Finish block mode outside here so exception will not fatal the session.
         result.finishBlockMode();
@@ -2056,8 +2111,8 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             lastRequest.set(result);
             lastUserRequest.set(result);
         } catch (Throwable t) {
-            lastException.set(t); // This exception should drop the connection.
-            throw t;
+            // This exception should drop the connection.
+            throw GeneralUtil.nestedException(setLastException(t, true));
         }
 
         if (!ignoreResult) {
@@ -2107,6 +2162,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
     private Boolean flagFeedback = null;
     private Boolean flagRawString = null;
     private Boolean flagXRPC = null;
+    private Boolean flagMarkDistributed = null;
 
     public boolean supportMessageTimestamp() {
         // disabled in XConnectionManager when galaxy protocol
@@ -2122,7 +2178,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
 
         if (client.getBaseVersion() == XClient.DnBaseVersion.DN_X_CLUSTER) {
             final String minor = client.getMinorVersion();
-            if (minor.equals("local")) {
+            if (minor.equals("local") || minor.equals("log")) {
                 return flagMessageTimestamp = XConfig.X_LOCAL_ENABLE_MESSAGE_TIMESTAMP;
             }
             try {
@@ -2155,7 +2211,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
 
         if (client.getBaseVersion() == XClient.DnBaseVersion.DN_X_CLUSTER) {
             final String minor = client.getMinorVersion();
-            if (minor.equals("local")) {
+            if (minor.equals("local") || minor.equals("log")) {
                 return flagQueryCache = XConfig.X_LOCAL_ENABLE_PLAN_CACHE;
             }
             try {
@@ -2188,7 +2244,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
 
         if (client.getBaseVersion() == XClient.DnBaseVersion.DN_X_CLUSTER) {
             final String minor = client.getMinorVersion();
-            if (minor.equals("local")) {
+            if (minor.equals("local") || minor.equals("log")) {
                 return flagQueryChunk = XConfig.X_LOCAL_ENABLE_CHUNK_RESULT;
             }
             try {
@@ -2221,7 +2277,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
 
         if (client.getBaseVersion() == XClient.DnBaseVersion.DN_X_CLUSTER) {
             final String minor = client.getMinorVersion();
-            if (minor.equals("local")) {
+            if (minor.equals("local") || minor.equals("log")) {
                 // Reuse the timestamp option.
                 return flagSingleShardOptimization = XConfig.X_LOCAL_ENABLE_MESSAGE_TIMESTAMP;
             }
@@ -2255,7 +2311,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
 
         if (client.getBaseVersion() == XClient.DnBaseVersion.DN_X_CLUSTER) {
             final String minor = client.getMinorVersion();
-            if (minor.equals("local")) {
+            if (minor.equals("local") || minor.equals("log")) {
                 // Reuse the timestamp option.
                 return flagFeedback = XConfig.X_LOCAL_ENABLE_FEEDBACK;
             }
@@ -2287,7 +2343,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
 
         if (client.getBaseVersion() == XClient.DnBaseVersion.DN_X_CLUSTER) {
             final String minor = client.getMinorVersion();
-            if (minor.equals("local")) {
+            if (minor.equals("local") || minor.equals("log")) {
                 // Reuse the timestamp option.
                 return flagRawString = XConfig.X_LOCAL_ENABLE_RAW_STRING;
             }
@@ -2321,6 +2377,382 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             return flagXRPC = true;
         }
         return flagXRPC = false;
+    }
+
+    public PolarxPhysicalBackfill.GetFileInfoOperator execCheckFileExistence(XConnection connection,
+                                                                             PolarxPhysicalBackfill.GetFileInfoOperator.Builder builder)
+        throws SQLException {
+        final XDataSource dataSource = connection.getDataSource();
+        if (dataSource != null) {
+            dataSource.getTsoCount().getAndIncrement();
+        }
+        perfCollection.getTsoCount().getAndIncrement();
+
+        initForRequest();
+
+        final String SQL_MARK = "checkFileExistence";
+        if (XLog.XProtocolLogger.isDebugEnabled()) {
+            historySql.add(SQL_MARK);
+            sessionSql.add(SQL_MARK);
+        }
+
+        if (!XConfig.GALAXY_X_PROTOCOL) {
+            lastIgnore = false;
+        }
+
+        final XPacket packet =
+            new XPacket(sessionId, Polarx.ClientMessages.Type.FILE_OPERATION_GET_FILE_INFO_VALUE, builder.build());
+        final XResult result;
+        try {
+            final long startNanos = System.nanoTime();
+            // Caused by special optimize of get TSO(execute on receive thread).
+            // We should finish pipeline first.
+            if (XConfig.GALAXY_X_PROTOCOL && lastIgnore) {
+                // Need add close expect message.
+                client.send(new XPacket(sessionId, Polarx.ClientMessages.Type.EXPECT_CLOSE_VALUE,
+                    PolarxExpect.Close.newBuilder().build()), true);
+                lastIgnore = false;
+                final XResult last = new XResult(connection, packetQueue, lastRequest.get(),
+                    startNanos, startNanos + connection.actualTimeoutNanos(),
+                    startNanos + connection.actualTimeoutNanos(), // for TSO never wait too long
+                    true, XResult.RequestType.EXPECTATIONS, BytesSql.getBytesSql("expect_close"),
+                    connection.getDefaultTokenKb(), null, null);
+                lastRequest.set(last);
+                last.finishBlockMode();
+            }
+            // Then normal TSO request.
+            client.send(packet, true);
+            addActive();
+            result = new XResult(connection, packetQueue, lastRequest.get(), startNanos,
+                startNanos + connection.actualTimeoutNanos(), startNanos + XConfig.DEFAULT_TOTAL_TIMEOUT_NANOS,
+                false, XResult.RequestType.GET_FILE_INFO, BytesSql.getBytesSql(SQL_MARK),
+                connection.getDefaultTokenKb(), null, null);
+            lastUserRequest.set(result);
+            lastRequest.set(result);
+        } catch (Throwable t) {
+            lastException.set(t); // This exception should drop the connection.
+            throw t;
+        }
+        // Finish block mode outside here so exception will not fatal the session.
+        result.finishBlockMode();
+
+        return result.getIbdFileInfo();
+    }
+
+    public PolarxPhysicalBackfill.TransferFileDataOperator execReadBufferFromFile(XConnection connection,
+                                                                                  PolarxPhysicalBackfill.TransferFileDataOperator.Builder transferFile)
+        throws SQLException {
+        final XDataSource dataSource = connection.getDataSource();
+        if (dataSource != null) {
+            dataSource.getTsoCount().getAndIncrement();
+        }
+        perfCollection.getTsoCount().getAndIncrement();
+
+        initForRequest();
+
+        final String SQL_MARK = "getBufferFromFile";
+        if (XLog.XProtocolLogger.isDebugEnabled()) {
+            historySql.add(SQL_MARK);
+            sessionSql.add(SQL_MARK);
+        }
+
+        if (!XConfig.GALAXY_X_PROTOCOL) {
+            lastIgnore = false;
+        }
+
+        final XPacket packet =
+            new XPacket(sessionId, Polarx.ClientMessages.Type.FILE_OPERATION_TRANSFER_FILE_DATA_VALUE,
+                transferFile.build());
+        final XResult result;
+        try {
+            final long startNanos = System.nanoTime();
+            // Caused by special optimize of get TSO(execute on receive thread).
+            // We should finish pipeline first.
+            if (XConfig.GALAXY_X_PROTOCOL && lastIgnore) {
+                // Need add close expect message.
+                client.send(new XPacket(sessionId, Polarx.ClientMessages.Type.EXPECT_CLOSE_VALUE,
+                    PolarxExpect.Close.newBuilder().build()), true);
+                lastIgnore = false;
+                final XResult lastResult = new XResult(connection, packetQueue, lastRequest.get(),
+                    startNanos, startNanos + connection.actualTimeoutNanos(),
+                    startNanos + connection.actualTimeoutNanos(), // for TSO never wait too long
+                    true, XResult.RequestType.EXPECTATIONS, BytesSql.getBytesSql("expect_close"),
+                    connection.getDefaultTokenKb(), null, null);
+                lastRequest.set(lastResult);
+                lastResult.finishBlockMode();
+            }
+            // Then normal TSO request.
+            client.send(packet, true);
+            addActive();
+            result = new XResult(connection, packetQueue, lastRequest.get(), startNanos,
+                startNanos + connection.actualTimeoutNanos(), startNanos + XConfig.DEFAULT_TOTAL_TIMEOUT_NANOS,
+                false, XResult.RequestType.TRANSFER_FILE, BytesSql.getBytesSql(SQL_MARK),
+                connection.getDefaultTokenKb(), null, null);
+            lastUserRequest.set(result);
+            lastRequest.set(result);
+        } catch (Throwable t) {
+            lastException.set(t); // This exception should drop the connection.
+            throw t;
+        }
+        // Finish block mode outside here so exception will not fatal the session.
+        result.finishBlockMode();
+        return result.getBufferFromIbdFile();
+    }
+
+    public long execTransferFile(XConnection connection,
+                                 PolarxPhysicalBackfill.TransferFileDataOperator.Builder transferFile)
+        throws SQLException {
+        final XDataSource dataSource = connection.getDataSource();
+        if (dataSource != null) {
+            //dataSource.getTsoCount().getAndIncrement();
+        }
+        //perfCollection.getTsoCount().getAndIncrement();
+
+        initForRequest();
+
+        final String SQL_MARK = "transferFile";
+        if (XLog.XProtocolLogger.isDebugEnabled()) {
+            historySql.add(SQL_MARK);
+            sessionSql.add(SQL_MARK);
+        }
+
+        if (!XConfig.GALAXY_X_PROTOCOL) {
+            lastIgnore = false;
+        }
+
+        final XPacket packet =
+            new XPacket(sessionId, Polarx.ClientMessages.Type.FILE_OPERATION_TRANSFER_FILE_DATA_VALUE,
+                transferFile.build());
+        final XResult result;
+        try {
+            final long startNanos = System.nanoTime();
+            // Caused by special optimize of get TSO(execute on receive thread).
+            // We should finish pipeline first.
+            if (XConfig.GALAXY_X_PROTOCOL && lastIgnore) {
+                // Need add close expect message.
+                client.send(new XPacket(sessionId, Polarx.ClientMessages.Type.EXPECT_CLOSE_VALUE,
+                    PolarxExpect.Close.newBuilder().build()), true);
+                lastIgnore = false;
+                final XResult lastResult = new XResult(connection, packetQueue, lastRequest.get(),
+                    startNanos, startNanos + connection.actualTimeoutNanos(),
+                    startNanos + connection.actualTimeoutNanos(), // for TSO never wait too long
+                    true, XResult.RequestType.EXPECTATIONS, BytesSql.getBytesSql("expect_close"),
+                    connection.getDefaultTokenKb(), null, null);
+                lastRequest.set(lastResult);
+                lastResult.finishBlockMode();
+            }
+            // Then normal TSO request.
+            client.send(packet, true);
+            addActive();
+            result = new XResult(connection, packetQueue, lastRequest.get(), startNanos,
+                startNanos + connection.actualTimeoutNanos(), startNanos + XConfig.DEFAULT_TOTAL_TIMEOUT_NANOS,
+                false, XResult.RequestType.TRANSFER_FILE, BytesSql.getBytesSql(SQL_MARK),
+                connection.getDefaultTokenKb(), null, null);
+            lastUserRequest.set(result);
+            lastRequest.set(result);
+        } catch (Throwable t) {
+            lastException.set(t); // This exception should drop the connection.
+            throw t;
+        }
+        // Finish block mode outside here so exception will not fatal the session.
+        result.finishBlockMode();
+        return result.getTransferBufferSize();
+    }
+
+    public PolarxPhysicalBackfill.FileManageOperatorResponse execCloneFile(XConnection connection,
+                                                                           PolarxPhysicalBackfill.FileManageOperator.Builder builder)
+        throws SQLException {
+        final XDataSource dataSource = connection.getDataSource();
+        if (dataSource != null) {
+            dataSource.getTsoCount().getAndIncrement();
+        }
+        perfCollection.getTsoCount().getAndIncrement();
+
+        initForRequest();
+
+        final String SQL_MARK = "cloneFile";
+        if (XLog.XProtocolLogger.isDebugEnabled()) {
+            historySql.add(SQL_MARK);
+            sessionSql.add(SQL_MARK);
+        }
+
+        if (!XConfig.GALAXY_X_PROTOCOL) {
+            lastIgnore = false;
+        }
+
+        final XPacket packet =
+            new XPacket(sessionId, Polarx.ClientMessages.Type.FILE_OPERATION_FILE_MANAGE_VALUE, builder.build());
+        final XResult result;
+        try {
+            final long startNanos = System.nanoTime();
+            // Caused by special optimize of get TSO(execute on receive thread).
+            // We should finish pipeline first.
+            if (XConfig.GALAXY_X_PROTOCOL && lastIgnore) {
+                // Need add close expect message.
+                client.send(new XPacket(sessionId, Polarx.ClientMessages.Type.EXPECT_CLOSE_VALUE,
+                    PolarxExpect.Close.newBuilder().build()), true);
+                lastIgnore = false;
+                final XResult lastResult = new XResult(connection, packetQueue, lastRequest.get(),
+                    startNanos, startNanos + connection.actualTimeoutNanos(),
+                    startNanos + connection.actualTimeoutNanos(), // for TSO never wait too long
+                    true, XResult.RequestType.EXPECTATIONS, BytesSql.getBytesSql("expect_close"),
+                    connection.getDefaultTokenKb(), null, null);
+                lastRequest.set(lastResult);
+                lastResult.finishBlockMode();
+            }
+            // Then normal TSO request.
+            client.send(packet, true);
+            addActive();
+            result = new XResult(connection, packetQueue, lastRequest.get(), startNanos,
+                startNanos + connection.actualTimeoutNanos(), startNanos + XConfig.DEFAULT_TOTAL_TIMEOUT_NANOS,
+                false, XResult.RequestType.CLONE_FILE, BytesSql.getBytesSql(SQL_MARK),
+                connection.getDefaultTokenKb(), null, null);
+            lastUserRequest.set(result);
+            lastRequest.set(result);
+        } catch (Throwable t) {
+            lastException.set(t); // This exception should drop the connection.
+            throw t;
+        }
+        // Finish block mode outside here so exception will not fatal the session.
+        result.finishBlockMode();
+
+        return result.getFileManageOperatorResponse();
+    }
+
+    public PolarxPhysicalBackfill.FileManageOperatorResponse execDeleteTempIbdFile(XConnection connection,
+                                                                                   PolarxPhysicalBackfill.FileManageOperator.Builder builder)
+        throws SQLException {
+        final XDataSource dataSource = connection.getDataSource();
+        if (dataSource != null) {
+            dataSource.getTsoCount().getAndIncrement();
+        }
+        perfCollection.getTsoCount().getAndIncrement();
+
+        initForRequest();
+
+        final String SQL_MARK = "deleteTempFile";
+        if (XLog.XProtocolLogger.isDebugEnabled()) {
+            historySql.add(SQL_MARK);
+            sessionSql.add(SQL_MARK);
+        }
+
+        if (!XConfig.GALAXY_X_PROTOCOL) {
+            lastIgnore = false;
+        }
+
+        final XPacket packet =
+            new XPacket(sessionId, Polarx.ClientMessages.Type.FILE_OPERATION_FILE_MANAGE_VALUE, builder.build());
+        final XResult result;
+        try {
+            final long startNanos = System.nanoTime();
+            // Caused by special optimize of get TSO(execute on receive thread).
+            // We should finish pipeline first.
+            if (XConfig.GALAXY_X_PROTOCOL && lastIgnore) {
+                // Need add close expect message.
+                client.send(new XPacket(sessionId, Polarx.ClientMessages.Type.EXPECT_CLOSE_VALUE,
+                    PolarxExpect.Close.newBuilder().build()), true);
+                lastIgnore = false;
+                final XResult lastResult = new XResult(connection, packetQueue, lastRequest.get(),
+                    startNanos, startNanos + connection.actualTimeoutNanos(),
+                    startNanos + connection.actualTimeoutNanos(), // for TSO never wait too long
+                    true, XResult.RequestType.EXPECTATIONS, BytesSql.getBytesSql("expect_close"),
+                    connection.getDefaultTokenKb(), null, null);
+                lastRequest.set(lastResult);
+                lastResult.finishBlockMode();
+            }
+            // Then normal TSO request.
+            client.send(packet, true);
+            addActive();
+            result = new XResult(connection, packetQueue, lastRequest.get(), startNanos,
+                startNanos + connection.actualTimeoutNanos(), startNanos + XConfig.DEFAULT_TOTAL_TIMEOUT_NANOS,
+                false, XResult.RequestType.DELETE_FILE, BytesSql.getBytesSql(SQL_MARK),
+                connection.getDefaultTokenKb(), null, null);
+            lastUserRequest.set(result);
+            lastRequest.set(result);
+        } catch (Throwable t) {
+            lastException.set(t); // This exception should drop the connection.
+            throw t;
+        }
+        // Finish block mode outside here so exception will not fatal the session.
+        result.finishBlockMode();
+
+        return result.getFileManageOperatorResponse();
+    }
+
+    public PolarxPhysicalBackfill.FileManageOperatorResponse execFallocateIbdFile(XConnection connection,
+                                                                                  PolarxPhysicalBackfill.FileManageOperator.Builder builder)
+        throws SQLException {
+        final XDataSource dataSource = connection.getDataSource();
+        if (dataSource != null) {
+            dataSource.getTsoCount().getAndIncrement();
+        }
+        perfCollection.getTsoCount().getAndIncrement();
+
+        initForRequest();
+
+        final String SQL_MARK = "fallocateIdbFile";
+        if (XLog.XProtocolLogger.isDebugEnabled()) {
+            historySql.add(SQL_MARK);
+            sessionSql.add(SQL_MARK);
+        }
+
+        if (!XConfig.GALAXY_X_PROTOCOL) {
+            lastIgnore = false;
+        }
+
+        final XPacket packet =
+            new XPacket(sessionId, Polarx.ClientMessages.Type.FILE_OPERATION_FILE_MANAGE_VALUE, builder.build());
+        final XResult result;
+        try {
+            final long startNanos = System.nanoTime();
+            // Caused by special optimize of get TSO(execute on receive thread).
+            // We should finish pipeline first.
+            if (XConfig.GALAXY_X_PROTOCOL && lastIgnore) {
+                // Need add close expect message.
+                client.send(new XPacket(sessionId, Polarx.ClientMessages.Type.EXPECT_CLOSE_VALUE,
+                    PolarxExpect.Close.newBuilder().build()), true);
+                lastIgnore = false;
+                final XResult lastResult = new XResult(connection, packetQueue, lastRequest.get(),
+                    startNanos, startNanos + connection.actualTimeoutNanos(),
+                    startNanos + connection.actualTimeoutNanos(), // for TSO never wait too long
+                    true, XResult.RequestType.EXPECTATIONS, BytesSql.getBytesSql("expect_close"),
+                    connection.getDefaultTokenKb(), null, null);
+                lastRequest.set(lastResult);
+                lastResult.finishBlockMode();
+            }
+            // Then normal TSO request.
+            client.send(packet, true);
+            addActive();
+            result = new XResult(connection, packetQueue, lastRequest.get(), startNanos,
+                startNanos + connection.actualTimeoutNanos(), startNanos + XConfig.DEFAULT_TOTAL_TIMEOUT_NANOS,
+                false, XResult.RequestType.FALLOCATE_FILE, BytesSql.getBytesSql(SQL_MARK),
+                connection.getDefaultTokenKb(), null, null);
+            lastUserRequest.set(result);
+            lastRequest.set(result);
+        } catch (Throwable t) {
+            lastException.set(t); // This exception should drop the connection.
+            throw t;
+        }
+        // Finish block mode outside here so exception will not fatal the session.
+        result.finishBlockMode();
+
+        return result.getFileManageOperatorResponse();
+    }
+
+    public boolean supportMarkDistributed() {
+        if (flagMarkDistributed != null) {
+            return flagMarkDistributed;
+        }
+
+        if (!client.isActive()) {
+            return false; // Initializing.
+        }
+
+        final Object markDistributed = client.getSessionVariablesL().get("innodb_mark_distributed");
+        if (null != markDistributed) {
+            return flagMarkDistributed = true;
+        }
+        return flagMarkDistributed = false;
     }
 
     /**

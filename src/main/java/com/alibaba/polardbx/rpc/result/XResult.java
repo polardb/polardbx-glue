@@ -31,6 +31,7 @@ import com.alibaba.polardbx.rpc.packet.XPacketQueue;
 import com.alibaba.polardbx.rpc.pool.XConnection;
 import com.alibaba.polardbx.rpc.pool.XConnectionManager;
 import com.google.protobuf.ByteString;
+import com.mysql.cj.polarx.protobuf.PolarxPhysicalBackfill;
 import com.mysql.cj.polarx.protobuf.PolarxNotice;
 import com.mysql.cj.polarx.protobuf.PolarxResultset;
 import com.mysql.cj.x.protobuf.Polarx;
@@ -71,7 +72,12 @@ public class XResult implements AutoCloseable {
         FETCH_TSO("fetch_tso"),
         EXPECTATIONS("expectations"),
         SQL_PREPARE_EXECUTE("sql_prepare_execute"),
-        AUTO_SP("auto_sp");
+        AUTO_SP("auto_sp"),
+        GET_FILE_INFO("get_file_info"),
+        TRANSFER_FILE("transfer_file"),
+        CLONE_FILE("clone_file"),
+        DELETE_FILE("delete_file"),
+        FALLOCATE_FILE("fallocate_file");
 
         private final String name;
 
@@ -106,6 +112,10 @@ public class XResult implements AutoCloseable {
     private volatile long pktResponseNanos = -1;
     private long responseNanos = -1;
     private long finishNanos = -1;
+    private long transferBufferSize = -1;
+    private PolarxPhysicalBackfill.TransferFileDataOperator bufferFromIbdFile;
+    private PolarxPhysicalBackfill.GetFileInfoOperator ibdFileInfo;
+    private PolarxPhysicalBackfill.FileManageOperatorResponse fileManageOperatorResponse;
 
     // Slow XRequest.
     private AtomicBoolean logged = new AtomicBoolean(false);
@@ -382,23 +392,17 @@ public class XResult implements AutoCloseable {
                             ;
                         }
                         // or all response has already received
-                        final Throwable throwable = connection.getLastException();
-                        if (throwable != null && throwable.getMessage().contains("Query was canceled")) {
-                            // Reset the exception and let session reuse.
-                            connection.setLastException(null);
-                        }
+                        connection.resetExceptionFromCancel(); // reset for reuse if possible
                     }
                 } catch (SQLException e) {
                     if (e.getMessage().contains("Query execution was interrupted")) {
-                        logger.info("Query was canceled: " + sql);
+                        boolean reuse = false;
                         try {
-                            final Throwable throwable = connection.getLastException();
-                            if (throwable != null && throwable.getMessage().contains("Query was canceled")) {
-                                // Reset the exception and let session reuse.
-                                connection.setLastException(null);
-                            }
+                            reuse = connection.resetExceptionFromCancel(); // reset for reuse if possible
                         } catch (Throwable ignore) {
                         }
+                        logger.info(
+                            "Query was canceled on DN and session " + (reuse ? "reuse" : "drop") + " sql: " + sql);
                     } else {
                         logger.warn(e);
                         logger.warn("Query canceled with unexpected error. " + sql);
@@ -609,7 +613,7 @@ public class XResult implements AutoCloseable {
                 if (ResultStatus.XResultFatal == previousState) {
                     // Cause myself fatal.
                     status = ResultStatus.XResultFatal;
-                    throw GeneralUtil.nestedException(session.setLastException(e));
+                    throw GeneralUtil.nestedException(session.setLastException(e, true));
                 } else if (previousState != ResultStatus.XResultFinish && previousState != ResultStatus.XResultError) {
                     logger.error(
                         "Prev unfinished: " + previous.sql + " status: " + previousState.name() + " now: " + sql
@@ -660,7 +664,7 @@ public class XResult implements AutoCloseable {
                 try {
                     packet = pipe.poll(wait ? waitNanos : 0, TimeUnit.NANOSECONDS);
                 } catch (InterruptedException e) {
-                    throw GeneralUtil.nestedException(session.setLastException(e));
+                    throw GeneralUtil.nestedException(session.setLastException(e, true));
                 }
                 if (null == packet) {
                     if (!wait) {
@@ -737,6 +741,52 @@ public class XResult implements AutoCloseable {
                             finishNanos = gotPktNanos - startNanos;
                             return null;
                         }
+                        break;
+                    case Polarx.ServerMessages.Type.RESULTSET_TRANSFER_FILE_DATA_OK_VALUE:
+                        if (requestType == RequestType.TRANSFER_FILE) {
+                            final PolarxPhysicalBackfill.TransferFileDataOperator transferFileData =
+                                (PolarxPhysicalBackfill.TransferFileDataOperator) packet.getPacket();
+                            if (transferFileData.getOperatorType()
+                                == PolarxPhysicalBackfill.TransferFileDataOperator.Type.PUT_DATA_TO_TAR_IBD) {
+                                transferBufferSize = transferFileData.getBufferLen();
+                                status = ResultStatus.XResultFinish;
+                                responseNanos = gotPktNanos - startNanos;
+                                finishNanos = gotPktNanos - startNanos;
+                                return null;
+                            } else {
+                                bufferFromIbdFile = transferFileData;
+                                status = ResultStatus.XResultFinish;
+                                responseNanos = gotPktNanos - startNanos;
+                                finishNanos = gotPktNanos - startNanos;
+                                return null;
+                            }
+                        }
+                        break;
+
+                    case Polarx.ServerMessages.Type.RESULTSET_GET_FILE_INFO_OK_VALUE:
+                        if (requestType == RequestType.GET_FILE_INFO) {
+                            final PolarxPhysicalBackfill.GetFileInfoOperator getFileInfo =
+                                (PolarxPhysicalBackfill.GetFileInfoOperator) packet.getPacket();
+                            ibdFileInfo = getFileInfo;
+                            status = ResultStatus.XResultFinish;
+                            responseNanos = gotPktNanos - startNanos;
+                            finishNanos = gotPktNanos - startNanos;
+                            return null;
+                        }
+                        break;
+
+                    case Polarx.ServerMessages.Type.RESULTSET_FILE_MANAGE_OK_VALUE:
+                        if (requestType == RequestType.CLONE_FILE || requestType == RequestType.DELETE_FILE
+                            || requestType == RequestType.FALLOCATE_FILE) {
+                            final PolarxPhysicalBackfill.FileManageOperatorResponse fileManageRes =
+                                (PolarxPhysicalBackfill.FileManageOperatorResponse) packet.getPacket();
+                            fileManageOperatorResponse = fileManageRes;
+                            status = ResultStatus.XResultFinish;
+                            responseNanos = gotPktNanos - startNanos;
+                            finishNanos = gotPktNanos - startNanos;
+                            return null;
+                        }
+                        break;
                     }
                     break;
 
@@ -842,7 +892,7 @@ public class XResult implements AutoCloseable {
                         finishNanos = gotPktNanos - startNanos;
                         throw GeneralUtil.nestedException(
                             session.setLastException(new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_RESULT,
-                                "Fatal error more result set not supported.")));
+                                "Fatal error more result set not supported."), true));
 
                     default:
                         break;
@@ -939,7 +989,7 @@ public class XResult implements AutoCloseable {
                                     continue loop;
                                 }
                             } catch (Throwable t) {
-                                throw GeneralUtil.nestedException(session.setLastException(t));
+                                throw GeneralUtil.nestedException(session.setLastException(t, true));
                             }
                             // Only bad usage get here.
                             status = ResultStatus.XResultError;
@@ -964,7 +1014,7 @@ public class XResult implements AutoCloseable {
                         finishNanos = gotPktNanos - startNanos;
                         throw (SQLException) session.setLastException(
                             new SQLException("Fatal error when fetch data: " + error.getMsg(), error.getSqlState(),
-                                error.getCode()));
+                                error.getCode()), true);
                     }
                 } else if (Polarx.ServerMessages.Type.NOTICE_VALUE == packet.getType()) {
                     // TODO: Other notice.
@@ -1022,7 +1072,8 @@ public class XResult implements AutoCloseable {
                 finishNanos = gotPktNanos - startNanos;
                 throw GeneralUtil.nestedException(connection.setLastException(
                     new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_RESULT,
-                        "XResult unexpected packet type " + packet.getType() + " at status " + status.name() + ".")));
+                        "XResult unexpected packet type " + packet.getType() + " at status " + status.name() + "."),
+                    true));
             }
         }
     }
@@ -1113,5 +1164,21 @@ public class XResult implements AutoCloseable {
         } else {
             return 0;
         }
+    }
+
+    public long getTransferBufferSize() {
+        return transferBufferSize;
+    }
+
+    public PolarxPhysicalBackfill.TransferFileDataOperator getBufferFromIbdFile() {
+        return bufferFromIbdFile;
+    }
+
+    public PolarxPhysicalBackfill.GetFileInfoOperator getIbdFileInfo() {
+        return ibdFileInfo;
+    }
+
+    public PolarxPhysicalBackfill.FileManageOperatorResponse getFileManageOperatorResponse() {
+        return fileManageOperatorResponse;
     }
 }

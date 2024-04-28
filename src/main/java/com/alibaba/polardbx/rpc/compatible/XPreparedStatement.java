@@ -17,7 +17,6 @@
 package com.alibaba.polardbx.rpc.compatible;
 
 import com.alibaba.polardbx.common.exception.NotSupportException;
-import com.alibaba.polardbx.common.exception.TddlNestableRuntimeException;
 import com.alibaba.polardbx.common.exception.TddlRuntimeException;
 import com.alibaba.polardbx.common.exception.code.ErrorCode;
 import com.alibaba.polardbx.common.jdbc.BytesSql;
@@ -748,7 +747,7 @@ public class XPreparedStatement extends XStatement implements PreparedStatement 
             } catch (SQLException e) {
                 // Fail this session when any unfinished exception occurs.
                 if (!finishExecute) {
-                    connection.setLastException(e);
+                    connection.setLastException(e, true);
                 }
                 throw e;
             } catch (Throwable t) {
@@ -756,7 +755,7 @@ public class XPreparedStatement extends XStatement implements PreparedStatement 
                 if (finishExecute) {
                     throw t;
                 } else {
-                    throw new TddlNestableRuntimeException(connection.setLastException(t));
+                    throw GeneralUtil.nestedException(connection.setLastException(t, true));
                 }
             }
             for (int i = 0; i < batch.size(); ++i) {

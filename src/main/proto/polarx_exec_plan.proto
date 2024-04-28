@@ -171,7 +171,7 @@ message Aggr {
     required AnyPlan sub_read_plan = 1;
     required AggrType type = 2;  //聚集函数类型
     required Polarx.Datatypes.Scalar field = 3;  //列名
-    required Polarx.Expr.Expr expr = 4; //聚集函数对应的表达式 
+    required Polarx.Expr.Expr expr = 4; //聚集函数对应的表达式
 }
 
 message AnyPlan {
@@ -223,5 +223,8 @@ message ExecPlan {
 
   // capabilities
   optional uint64 capabilities = 16;
+
+  // innodb_mark_distributed
+  optional bool mark_distributed = 17;
 }
 

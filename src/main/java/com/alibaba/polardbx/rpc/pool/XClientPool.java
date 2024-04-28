@@ -18,6 +18,7 @@ package com.alibaba.polardbx.rpc.pool;
 
 import com.alibaba.polardbx.common.eventlogger.EventLogger;
 import com.alibaba.polardbx.common.eventlogger.EventType;
+import com.alibaba.polardbx.common.exception.TddlNestableRuntimeException;
 import com.alibaba.polardbx.common.exception.TddlRuntimeException;
 import com.alibaba.polardbx.common.exception.code.ErrorCode;
 import com.alibaba.polardbx.common.properties.DynamicConfig;
@@ -161,7 +162,7 @@ public class XClientPool {
     private long lastNanos = 0;
 
     public String getDnTag() {
-        return XConnectionManager.digest(host, port, username);
+        return XConnectionManager.digest(host, port, username, password);
     }
 
     public DnPerfItem getPerfItem() {
@@ -278,7 +279,7 @@ public class XClientPool {
         if (concurrent > DynamicConfig.getInstance().getXprotoMaxDnConcurrent() ||
             wait > waitThresh) {
             throw new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_CLIENT,
-                this + " max concurrent or wait exceed. now concurrent: " + concurrent + " wait: " + wait);
+                "Max concurrent or wait exceed. now concurrent: " + concurrent + " wait: " + wait + '.');
         }
 
         try {
@@ -287,6 +288,16 @@ public class XClientPool {
         } finally {
             perfCollection.getGetConnectionCount().getAndDecrement();
         }
+    }
+
+    public String diagnose() {
+        List<XClient> copy = new ArrayList<>();
+        copy.addAll(clients);
+        copy.addAll(agingClients);
+        return this + " now " + clients.size() + " TCP(" + agingClients.size() + " aging), " + copy.stream()
+            .mapToLong(XClient::getWorkingSessionCount).sum() + " sessions(" + perfCollection.getSessionActiveCount()
+            .get() + " running, " + idleCount.get() + " idle), " + perfCollection.getGetConnectionCount().get()
+            + " waiting connection.";
     }
 
     public XConnection getConnection(BiFunction<XClient, XPacket, Boolean> consumer, long timeoutNanos,
@@ -362,7 +373,7 @@ public class XClientPool {
                             } catch (Throwable t) {
                                 XLog.XLogLogger.error(t);
                             }
-                            throw e;
+                            throw new TddlNestableRuntimeException("Failed to init new session on an empty TCP.", e);
                         }
                     } else {
                         try {
@@ -410,7 +421,8 @@ public class XClientPool {
                                 } catch (Throwable t) {
                                     XLog.XLogLogger.error(t);
                                 }
-                                throw e;
+                                throw new TddlNestableRuntimeException(
+                                    "Failed to init new session on a non-empty TCP.", e);
                             }
                         } else {
                             try {
@@ -442,7 +454,7 @@ public class XClientPool {
                         } catch (Throwable e) {
                             XLog.XLogLogger.error(e);
                             newClient.close();
-                            throw e;
+                            throw new TddlNestableRuntimeException("Failed to allocate session on a new TCP.", e);
                         }
                         clients.add(newClient);
                     } else {
@@ -476,7 +488,7 @@ public class XClientPool {
                     XLog.XLogLogger.error(t);
                 }
                 removeClient(newClient, e.getMessage());
-                throw e;
+                throw new TddlNestableRuntimeException("Failed to init new TCP.", e);
             }
 
             // Recheck and release if pool released(To prevent release and pre-allocate concurrently).
@@ -509,7 +521,7 @@ public class XClientPool {
                 } catch (Throwable t) {
                     XLog.XLogLogger.error(t);
                 }
-                throw e;
+                throw new TddlNestableRuntimeException("Failed to init new session on a new TCP.", e);
             }
         }
     }

@@ -28,6 +28,7 @@ import com.alibaba.polardbx.rpc.utils.TimerThread;
 import com.google.protobuf.CodedOutputStream;
 import com.google.protobuf.GeneratedMessageV3;
 import com.mysql.cj.polarx.protobuf.PolarxConnection;
+import com.mysql.cj.polarx.protobuf.PolarxPhysicalBackfill;
 import com.mysql.cj.polarx.protobuf.PolarxNotice;
 import com.mysql.cj.polarx.protobuf.PolarxResultset;
 import com.mysql.cj.polarx.protobuf.PolarxSession;
@@ -485,7 +486,21 @@ public class NIOClient implements NIOConnection {
                                 sid, Polarx.ServerMessages.Type.RESULTSET_CHUNK_VALUE,
                                 PolarxResultset.Chunk.parseFrom(recvBuffer), packetSize));
                             break;
-
+                        case Polarx.ServerMessages.Type.RESULTSET_GET_FILE_INFO_OK_VALUE:
+                            batch.add(
+                                new XPacket(sid, type, PolarxPhysicalBackfill.GetFileInfoOperator.parseFrom(recvBuffer),
+                                    packetSize));
+                            break;
+                        case Polarx.ServerMessages.Type.RESULTSET_TRANSFER_FILE_DATA_OK_VALUE:
+                            batch.add(new XPacket(sid, type,
+                                PolarxPhysicalBackfill.TransferFileDataOperator.parseFrom(recvBuffer), packetSize));
+                            break;
+                        case Polarx.ServerMessages.Type.RESULTSET_FILE_MANAGE_OK_VALUE:
+                            batch.add(
+                                new XPacket(sid, type,
+                                    PolarxPhysicalBackfill.FileManageOperatorResponse.parseFrom(recvBuffer),
+                                    packetSize));
+                            break;
                         // TODO: others.
                         default:
                             XLog.XLogLogger.error(this + " Unknown ServerMessages.Type: " + type);

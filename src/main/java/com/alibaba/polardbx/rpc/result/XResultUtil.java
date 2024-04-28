@@ -18,6 +18,7 @@ package com.alibaba.polardbx.rpc.result;
 
 import com.alibaba.polardbx.common.CrcAccumulator;
 import com.alibaba.polardbx.common.charset.MySQLUnicodeUtils;
+import com.alibaba.polardbx.common.datatype.Decimal;
 import com.alibaba.polardbx.common.datatype.DecimalConverter;
 import com.alibaba.polardbx.common.datatype.DecimalStructure;
 import com.alibaba.polardbx.common.datatype.FastDecimalUtils;
@@ -27,6 +28,7 @@ import com.alibaba.polardbx.common.exception.TddlRuntimeException;
 import com.alibaba.polardbx.common.exception.code.ErrorCode;
 import com.alibaba.polardbx.common.utils.BigDecimalUtil;
 import com.alibaba.polardbx.common.utils.Pair;
+import com.alibaba.polardbx.common.utils.hash.ByteUtil;
 import com.alibaba.polardbx.common.utils.time.MySQLTimeConverter;
 import com.alibaba.polardbx.common.utils.time.MySQLTimeConverter;
 import com.alibaba.polardbx.common.utils.time.MySQLTimeTypeUtil;
@@ -44,6 +46,7 @@ import com.google.protobuf.CodedInputStream;
 import com.mysql.cj.polarx.protobuf.PolarxResultset;
 import org.apache.hadoop.hive.ql.exec.vector.BytesColumnVector;
 import org.apache.hadoop.hive.ql.exec.vector.ColumnVector;
+import org.apache.hadoop.hive.ql.exec.vector.Decimal64ColumnVector;
 import org.apache.hadoop.hive.ql.exec.vector.DoubleColumnVector;
 import org.apache.hadoop.hive.ql.exec.vector.LongColumnVector;
 
@@ -743,9 +746,6 @@ public class XResultUtil {
         }
     }
 
-    /**
-     *
-     */
     public static void resultToColumnVector(PolarxResultset.ColumnMetaData meta, ByteString data, String targetCharset,
                                             ColumnVector columnVector, int rowNumber, boolean flipUnsigned,
                                             int precision, int scale, int length, ZoneId timezone,
@@ -754,7 +754,7 @@ public class XResultUtil {
                                             Optional<CrcAccumulator> accumulator)
         throws Exception {
 
-        if (0 == data.size()) {
+        if (data.isEmpty()) {
             if (columnVector instanceof LongColumnVector) {
                 columnVector.isNull[rowNumber] = true;
                 columnVector.noNulls = false;
@@ -1139,6 +1139,7 @@ public class XResultUtil {
             return;
         }
 
+        // TODO: to Decimal64
         case DECIMAL: {
             byte readScale = stream.readRawByte();
             // we allocate an extra char for the sign
@@ -1180,23 +1181,9 @@ public class XResultUtil {
             unscaledString.clear(); // reset position
 
             // parse string to decimal
-            DecimalStructure dec = new DecimalStructure();
             byte[] bs = unscaledString.array();
-            DecimalConverter.parseString(bs, 0, characters, dec, false);
+            putDecimalToVector(columnVector, accumulator, rowNumber, bs, characters, precision, scale);
 
-            // shift scale
-            FastDecimalUtils.shift(dec, dec, -scale);
-
-            // compact to bin
-            byte[] result = new byte[DecimalConverter.binarySize(precision, scale)];
-            DecimalConverter.decimalToBin(dec, result, precision, scale);
-
-            // convert latin1 to utf8
-            ((BytesColumnVector) columnVector).setVal(rowNumber, MySQLUnicodeUtils.latin1ToUtf8(result).getBytes());
-
-            // handle checksum
-            accumulator.ifPresent(a -> a.appendHash(
-                RawBytesDecimalUtils.hashCode(dec.getDecimalMemorySegment())));
             return;
         }
 
@@ -1204,6 +1191,54 @@ public class XResultUtil {
             throw new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_RESULT,
                 "Unsupported type: " + meta.getType().name());
         }
+    }
+
+    private static void putDecimalToVector(ColumnVector columnVector, Optional<CrcAccumulator> accumulator,
+                                           int rowNumber, byte[] bs, int characters, int precision, int scale) {
+        if (columnVector instanceof LongColumnVector) {
+            putDecimal64ToVector((LongColumnVector) columnVector, accumulator, rowNumber, bs, characters, precision,
+                scale);
+        } else {
+            putNormalDecimalToVector((BytesColumnVector) columnVector, accumulator, rowNumber, bs, characters,
+                precision, scale);
+        }
+    }
+
+    /**
+     * Decimal64 按照 long 写入值
+     * 但是需要转化为 NormalDecimal 计算checksum
+     */
+    private static void putDecimal64ToVector(LongColumnVector columnVector, Optional<CrcAccumulator> accumulator,
+                                             int rowNumber, byte[] bs, int characters, int precision, int scale) {
+        long decimal64 = Long.parseLong(new String(bs, 0, characters));
+        columnVector.vector[rowNumber] = decimal64;
+
+        Decimal decimal = new Decimal(decimal64, scale);
+        // handle checksum
+        accumulator.ifPresent(a -> a.appendHash(
+            RawBytesDecimalUtils.hashCode(decimal.getMemorySegment())));
+    }
+
+    private static void putNormalDecimalToVector(BytesColumnVector columnVector, Optional<CrcAccumulator> accumulator,
+                                                 int rowNumber, byte[] bs, int characters, int precision, int scale) {
+        DecimalStructure dec = new DecimalStructure();
+
+        DecimalConverter.parseString(bs, 0, characters, dec, false);
+
+        // shift scale
+        FastDecimalUtils.shift(dec, dec, -scale);
+
+        // compact to bin
+        byte[] result = new byte[DecimalConverter.binarySize(precision, scale)];
+        DecimalConverter.decimalToBin(dec, result, precision, scale);
+
+        // convert latin1 to utf8
+        byte[] utf8Bytes = MySQLUnicodeUtils.latin1ToUtf8(result).getBytes();
+        columnVector.setVal(rowNumber, utf8Bytes);
+
+        // handle checksum
+        accumulator.ifPresent(a -> a.appendHash(
+            RawBytesDecimalUtils.hashCode(dec.getDecimalMemorySegment())));
     }
 
     public static PolarxResultset.ColumnMetaData compatibleMetaConvert(
@@ -1299,7 +1334,7 @@ public class XResultUtil {
 
         // get nano second from binary
         long nano;
-        if ((Byte.toUnsignedInt(bytes[5]) & 128) != 0) {
+        if ((Byte.toUnsignedInt(bytes[4]) & 128) != 0) {
             nano = (int) ((Integer.toUnsignedLong(255) << 24)
                 | (Integer.toUnsignedLong(Byte.toUnsignedInt(bytes[4])) << 16)
                 | (Integer.toUnsignedLong(Byte.toUnsignedInt(bytes[5])) << 8)

@@ -688,17 +688,18 @@ public class XClient implements AutoCloseable {
 
     public void decodeVersion() {
         final String version = (String) globalVariablesL.get("version");
-        final String xdbMark = "AliSQL-X-Cluster"; // eg. 5.7.14-AliSQL-X-Cluster-1.6.0.8-20210719-log
+        final String xdbMark = "X-Cluster";
+        // online: 5.7.38-X-Cluster-1.6.1.5-20240403-log or 5.7.14-AliSQL-X-Cluster-1.6.0.8-20210719-log
+        // local: 5.7.38-X-Cluster-1.6.1.5-log or 5.7.14-AliSQL-X-Cluster-1.6.0.8-log
         final String polardb80Mark = "polardb-3az"; // eg. 8.0.13-polardb-3az-20210723-110821
-        final String rds80Mark = "X-Cluster";
         try {
             final int idx = version.indexOf(xdbMark);
             final int idx2 = version.indexOf(polardb80Mark);
-            final int idx3 = version.indexOf(rds80Mark);
             if (idx != -1) {
                 final int midIdx = version.indexOf('-', idx + xdbMark.length() + 1);
                 final int lastIdx = midIdx != -1 ? version.indexOf('-', midIdx + 1) : -1;
-                baseVersion = DnBaseVersion.DN_X_CLUSTER;
+                baseVersion =
+                    version.startsWith("5.7.") ? DnBaseVersion.DN_X_CLUSTER : DnBaseVersion.DN_RDS_80_X_CLUSTER;
                 majorVersion = midIdx != -1 ? version.substring(idx + xdbMark.length() + 1, midIdx) :
                     version.substring(idx + xdbMark.length() + 1);
                 minorVersion = lastIdx != -1 ? version.substring(midIdx + 1, lastIdx) : version.substring(midIdx + 1);
@@ -708,13 +709,6 @@ public class XClient implements AutoCloseable {
                 baseVersion = DnBaseVersion.DN_POLAR_DB_80_3AZ;
                 majorVersion = midIdx != -1 ? version.substring(idx2 + polardb80Mark.length() + 1, midIdx) :
                     version.substring(idx2 + polardb80Mark.length() + 1);
-                minorVersion = lastIdx != -1 ? version.substring(midIdx + 1, lastIdx) : version.substring(midIdx + 1);
-            } else if (idx3 != -1) {
-                final int midIdx = version.indexOf('-', idx3 + rds80Mark.length() + 1);
-                final int lastIdx = midIdx != -1 ? version.indexOf('-', midIdx + 1) : -1;
-                baseVersion = DnBaseVersion.DN_RDS_80_X_CLUSTER;
-                majorVersion = midIdx != -1 ? version.substring(idx3 + rds80Mark.length() + 1, midIdx) :
-                    version.substring(idx3 + rds80Mark.length() + 1);
                 minorVersion = lastIdx != -1 ? version.substring(midIdx + 1, lastIdx) : version.substring(midIdx + 1);
             } else { // TODO: Add more DN base version here.
                 baseVersion = DnBaseVersion.DN_UNKNOWN;

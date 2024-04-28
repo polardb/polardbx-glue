@@ -29,6 +29,7 @@ import com.alibaba.polardbx.rpc.compatible.XPreparedStatement;
 import com.alibaba.polardbx.rpc.compatible.XStatement;
 import com.alibaba.polardbx.rpc.result.XResult;
 import com.google.protobuf.ByteString;
+import com.mysql.cj.polarx.protobuf.PolarxPhysicalBackfill;
 import com.mysql.cj.polarx.protobuf.PolarxNotice;
 import com.mysql.cj.x.protobuf.PolarxDatatypes;
 import com.mysql.cj.x.protobuf.PolarxExecPlan;
@@ -141,9 +142,11 @@ public class XConnection implements AutoCloseable, Connection {
                             probe = probe.getPrevious();
                         }
                         XLog.XLogLogger.error(this + " last req unclosed. " + lastRequest.getSql());
+                        // kill it to prevent block in flow control
+                        session.kill(true);
                     }
                 } catch (Throwable e) {
-                    session.setLastException(e);
+                    session.setLastException(e, true);
                     XLog.XLogLogger.error(e);
                 } finally {
                     final XClient parent = session.getClient();
@@ -276,6 +279,11 @@ public class XConnection implements AutoCloseable, Connection {
     public void setLazyCtsTransaction() throws SQLException {
         check();
         session.setLazyCtsTransaction();
+    }
+
+    public void setLazyMarkDistributed() throws SQLException {
+        check();
+        session.setLazyMarkDistributed();
     }
 
     public void setLazySnapshotSeq(long lazySnapshotSeq) throws SQLException {
@@ -532,6 +540,16 @@ public class XConnection implements AutoCloseable, Connection {
         }
     }
 
+    public boolean supportMarkDistributed() throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            return session.supportMarkDistributed();
+        } finally {
+            sessionLock.readLock().unlock();
+        }
+    }
+
     public long getConnectionId() throws SQLException {
         sessionLock.readLock().lock();
         try {
@@ -572,11 +590,21 @@ public class XConnection implements AutoCloseable, Connection {
         }
     }
 
-    public Throwable setLastException(Throwable lastException) throws SQLException {
+    public Throwable setLastException(Throwable lastException, boolean forceReplace) throws SQLException {
         sessionLock.readLock().lock();
         try {
             check();
-            return session.setLastException(lastException);
+            return session.setLastException(lastException, forceReplace);
+        } finally {
+            sessionLock.readLock().unlock();
+        }
+    }
+
+    public boolean resetExceptionFromCancel() throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            return session.resetExceptionFromCancel();
         } finally {
             sessionLock.readLock().unlock();
         }
@@ -975,6 +1003,86 @@ public class XConnection implements AutoCloseable, Connection {
     @Override
     public void abort(Executor executor) throws SQLException {
         throw new NotSupportException();
+    }
+
+    public long execTransferFile(PolarxPhysicalBackfill.TransferFileDataOperator.Builder transferFile)
+        throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            assert transferFile.getOperatorType()
+                == PolarxPhysicalBackfill.TransferFileDataOperator.Type.PUT_DATA_TO_TAR_IBD;
+            return session.execTransferFile(this, transferFile);
+        } finally {
+            sessionLock.readLock().unlock();
+        }
+    }
+
+    public PolarxPhysicalBackfill.TransferFileDataOperator execReadBufferFromFile(
+        PolarxPhysicalBackfill.TransferFileDataOperator.Builder transferFile)
+        throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            assert transferFile.getOperatorType()
+                == PolarxPhysicalBackfill.TransferFileDataOperator.Type.GET_DATA_FROM_SRC_IBD;
+            return session.execReadBufferFromFile(this, transferFile);
+        } finally {
+            sessionLock.readLock().unlock();
+        }
+    }
+
+    public PolarxPhysicalBackfill.GetFileInfoOperator execCheckFileExistence(
+        PolarxPhysicalBackfill.GetFileInfoOperator.Builder builder)
+        throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            assert builder.getOperatorType() == PolarxPhysicalBackfill.GetFileInfoOperator.Type.CHECK_SRC_FILE_EXISTENCE
+                || builder.getOperatorType()
+                == PolarxPhysicalBackfill.GetFileInfoOperator.Type.CHECK_TAR_FILE_EXISTENCE;
+            return session.execCheckFileExistence(this, builder);
+        } finally {
+            sessionLock.readLock().unlock();
+        }
+    }
+
+    public PolarxPhysicalBackfill.FileManageOperatorResponse exeCloneFile(
+        PolarxPhysicalBackfill.FileManageOperator.Builder builder) throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            assert
+                builder.getOperatorType() == PolarxPhysicalBackfill.FileManageOperator.Type.COPY_IBD_TO_TEMP_DIR_IN_SRC;
+            return session.execCloneFile(this, builder);
+        } finally {
+            sessionLock.readLock().unlock();
+        }
+    }
+
+    public PolarxPhysicalBackfill.FileManageOperatorResponse execDeleteTempIbdFile(
+        PolarxPhysicalBackfill.FileManageOperator.Builder builder) throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            assert builder.getOperatorType()
+                == PolarxPhysicalBackfill.FileManageOperator.Type.DELETE_IBD_FROM_TEMP_DIR_IN_SRC;
+            return session.execDeleteTempIbdFile(this, builder);
+        } finally {
+            sessionLock.readLock().unlock();
+        }
+    }
+
+    public PolarxPhysicalBackfill.FileManageOperatorResponse execFallocateIbdFile(
+        PolarxPhysicalBackfill.FileManageOperator.Builder builder) throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            assert builder.getOperatorType() == PolarxPhysicalBackfill.FileManageOperator.Type.FALLOCATE_IBD;
+            return session.execDeleteTempIbdFile(this, builder);
+        } finally {
+            sessionLock.readLock().unlock();
+        }
     }
 
     @Override

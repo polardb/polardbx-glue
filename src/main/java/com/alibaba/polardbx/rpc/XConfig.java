@@ -68,6 +68,6 @@ public class XConfig {
 
     public final static boolean VIP_WITH_X_PROTOCOL = false;
 
-    public static boolean GALAXY_X_PROTOCOL = true;
-    public static boolean OPEN_XRPC_PROTOCOL = false;
+    public static boolean GALAXY_X_PROTOCOL = false;
+    public static boolean OPEN_XRPC_PROTOCOL = true;
 }

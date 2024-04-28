@@ -68,6 +68,9 @@ message StmtExecute {
 
   // capabilities
   optional uint64 capabilities = 17;
+
+  // innodb_mark_distributed
+  optional bool mark_distributed = 18;
 }
 
 message GalaxyPrepareTableData {
@@ -107,6 +110,7 @@ message GalaxyPrepareExecute {
 
   // capabilities
   optional uint64 capabilities = 18;
+  optional bool mark_distributed = 19;
 }
 
 // statement executed successful

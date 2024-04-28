@@ -17,6 +17,7 @@
 package com.alibaba.polardbx.rpc.pool;
 
 import com.alibaba.fastjson.JSONObject;
+import com.alibaba.polardbx.common.exception.TddlNestableRuntimeException;
 import com.alibaba.polardbx.common.exception.TddlRuntimeException;
 import com.alibaba.polardbx.common.exception.code.ErrorCode;
 import com.alibaba.polardbx.common.utils.thread.ExecutorUtil;
@@ -417,7 +418,7 @@ public class XConnectionManager {
         synchronized (instancePool) {
             final XClientPool clientPool =
                 instancePool
-                    .computeIfAbsent(digest(host, port, username),
+                    .computeIfAbsent(digest(host, port, username, password),
                         key -> new XClientPool(this, host, port, username, password));
             final int cnt = clientPool.getRefCount().getAndIncrement();
             XLog.XLogLogger.info("XConnectionManager new datasource to "
@@ -427,8 +428,8 @@ public class XConnectionManager {
         }
     }
 
-    public void deinitializeDataSource(String host, int port, String username) {
-        final String digest = digest(host, port, username);
+    public void deinitializeDataSource(String host, int port, String username, String password) {
+        final String digest = digest(host, port, username, password);
         XClientPool clientPool;
         synchronized (instancePool) {
             clientPool = instancePool.get(digest);
@@ -479,8 +480,8 @@ public class XConnectionManager {
         };
     }
 
-    public XClientPool getClientPool(String host, int port, String username) {
-        return instancePool.get(digest(host, port, username));
+    public XClientPool getClientPool(String host, int port, String username, String password) {
+        return instancePool.get(digest(host, port, username, password));
     }
 
     public void reload() {
@@ -489,26 +490,35 @@ public class XConnectionManager {
         }
     }
 
-    public XConnection getConnection(String host, int port, String username, String defaultDB, long timeoutNanos)
+    public XConnection getConnection(String host, int port, String username, String password, String defaultDB,
+                                     long timeoutNanos)
         throws Exception {
-        final XClientPool clientPool = instancePool.get(digest(host, port, username));
+        final XClientPool clientPool = instancePool.get(digest(host, port, username, password));
         if (null == clientPool) {
             throw new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_CLIENT, "Client pool not initialized.");
         }
-        final XConnection connection = clientPool.getConnection(getPacketConsumer(), timeoutNanos);
+        XConnection connection = null;
         try {
+            connection = clientPool.getConnection(getPacketConsumer(), timeoutNanos);
             // Reset DB before use it.
             connection.setDefaultDB(defaultDB);
+            return connection;
         } catch (Exception e) {
-            connection.close();
-            XLog.XLogLogger.error(e);
-            throw e;
+            if (connection != null) {
+                try {
+                    connection.close();
+                } catch (Throwable t) {
+                    XLog.XLogLogger.error(t);
+                }
+            }
+            final Exception nested = new TddlNestableRuntimeException(e.getMessage() + ' ' + clientPool.diagnose(), e);
+            XLog.XLogLogger.error(nested);
+            throw nested;
         }
-        return connection;
     }
 
-    public static String digest(String host, int port, String username) {
-        return username + "@" + host + ":" + port;
+    public static String digest(String host, int port, String username, String password) {
+        return username + '#' + Integer.toHexString(password.hashCode()) + '@' + host + ':' + port;
     }
 
     public void gatherReactorPerf(List<ReactorPerfItem> list) {

@@ -49,7 +49,7 @@ public final class PolarxSql {
      * @return The bytes for namespace.
      */
     com.google.protobuf.ByteString
-        getNamespaceBytes();
+    getNamespaceBytes();
 
     /**
      * <code>optional bytes stmt = 1;</code>
@@ -109,8 +109,8 @@ public final class PolarxSql {
     /**
      * <code>repeated .Polarx.Datatypes.Any args = 2;</code>
      */
-    java.util.List<com.mysql.cj.x.protobuf.PolarxDatatypes.Any> 
-        getArgsList();
+    java.util.List<com.mysql.cj.x.protobuf.PolarxDatatypes.Any>
+    getArgsList();
     /**
      * <code>repeated .Polarx.Datatypes.Any args = 2;</code>
      */
@@ -122,8 +122,8 @@ public final class PolarxSql {
     /**
      * <code>repeated .Polarx.Datatypes.Any args = 2;</code>
      */
-    java.util.List<? extends com.mysql.cj.x.protobuf.PolarxDatatypes.AnyOrBuilder> 
-        getArgsOrBuilderList();
+    java.util.List<? extends com.mysql.cj.x.protobuf.PolarxDatatypes.AnyOrBuilder>
+    getArgsOrBuilderList();
     /**
      * <code>repeated .Polarx.Datatypes.Any args = 2;</code>
      */
@@ -168,13 +168,13 @@ public final class PolarxSql {
      * @return The bytes for schemaName.
      */
     com.google.protobuf.ByteString
-        getSchemaNameBytes();
+    getSchemaNameBytes();
 
     /**
      * <code>repeated .Polarx.Datatypes.SessionVariable session_variables = 6;</code>
      */
-    java.util.List<com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariable> 
-        getSessionVariablesList();
+    java.util.List<com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariable>
+    getSessionVariablesList();
     /**
      * <code>repeated .Polarx.Datatypes.SessionVariable session_variables = 6;</code>
      */
@@ -186,8 +186,8 @@ public final class PolarxSql {
     /**
      * <code>repeated .Polarx.Datatypes.SessionVariable session_variables = 6;</code>
      */
-    java.util.List<? extends com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariableOrBuilder> 
-        getSessionVariablesOrBuilderList();
+    java.util.List<? extends com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariableOrBuilder>
+    getSessionVariablesOrBuilderList();
     /**
      * <code>repeated .Polarx.Datatypes.SessionVariable session_variables = 6;</code>
      */
@@ -209,7 +209,7 @@ public final class PolarxSql {
      * @return The bytes for encoding.
      */
     com.google.protobuf.ByteString
-        getEncodingBytes();
+    getEncodingBytes();
 
     /**
      * <code>optional int32 token = 8;</code>
@@ -284,6 +284,25 @@ public final class PolarxSql {
      * @return The capabilities.
      */
     long getCapabilities();
+
+    /**
+     * <pre>
+     * innodb_mark_distributed
+     * </pre>
+     *
+     * <code>optional bool mark_distributed = 18;</code>
+     * @return Whether the markDistributed field is set.
+     */
+    boolean hasMarkDistributed();
+    /**
+     * <pre>
+     * innodb_mark_distributed
+     * </pre>
+     *
+     * <code>optional bool mark_distributed = 18;</code>
+     * @return The markDistributed.
+     */
+    boolean getMarkDistributed();
   }
   /**
    * <pre>
@@ -309,7 +328,7 @@ public final class PolarxSql {
       com.google.protobuf.GeneratedMessageV3 implements
       // @@protoc_insertion_point(message_implements:Polarx.Sql.StmtExecute)
       StmtExecuteOrBuilder {
-  private static final long serialVersionUID = 0L;
+    private static final long serialVersionUID = 0L;
     // Use StmtExecute.newBuilder() to construct.
     private StmtExecute(com.google.protobuf.GeneratedMessageV3.Builder<?> builder) {
       super(builder);
@@ -353,112 +372,117 @@ public final class PolarxSql {
         while (!done) {
           int tag = input.readTag();
           switch (tag) {
-            case 0:
+          case 0:
+            done = true;
+            break;
+          case 10: {
+            bitField0_ |= 0x00000002;
+            stmt_ = input.readBytes();
+            break;
+          }
+          case 18: {
+            if (!((mutable_bitField0_ & 0x00000040) != 0)) {
+              args_ = new java.util.ArrayList<com.mysql.cj.x.protobuf.PolarxDatatypes.Any>();
+              mutable_bitField0_ |= 0x00000040;
+            }
+            args_.add(
+                input.readMessage(com.mysql.cj.x.protobuf.PolarxDatatypes.Any.PARSER, extensionRegistry));
+            break;
+          }
+          case 26: {
+            com.google.protobuf.ByteString bs = input.readBytes();
+            bitField0_ |= 0x00000001;
+            namespace_ = bs;
+            break;
+          }
+          case 32: {
+            bitField0_ |= 0x00000040;
+            compactMetadata_ = input.readBool();
+            break;
+          }
+          case 42: {
+            com.google.protobuf.ByteString bs = input.readBytes();
+            bitField0_ |= 0x00000080;
+            schemaName_ = bs;
+            break;
+          }
+          case 50: {
+            if (!((mutable_bitField0_ & 0x00000200) != 0)) {
+              sessionVariables_ = new java.util.ArrayList<com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariable>();
+              mutable_bitField0_ |= 0x00000200;
+            }
+            sessionVariables_.add(
+                input.readMessage(com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariable.PARSER, extensionRegistry));
+            break;
+          }
+          case 58: {
+            com.google.protobuf.ByteString bs = input.readBytes();
+            bitField0_ |= 0x00000100;
+            encoding_ = bs;
+            break;
+          }
+          case 64: {
+            bitField0_ |= 0x00000200;
+            token_ = input.readInt32();
+            break;
+          }
+          case 72: {
+            bitField0_ |= 0x00000400;
+            resetError_ = input.readBool();
+            break;
+          }
+          case 80: {
+            bitField0_ |= 0x00000800;
+            snapshotSeq_ = input.readUInt64();
+            break;
+          }
+          case 88: {
+            bitField0_ |= 0x00001000;
+            commitSeq_ = input.readUInt64();
+            break;
+          }
+          case 98: {
+            bitField0_ |= 0x00000004;
+            stmtDigest_ = input.readBytes();
+            break;
+          }
+          case 106: {
+            bitField0_ |= 0x00000008;
+            hint_ = input.readBytes();
+            break;
+          }
+          case 112: {
+            bitField0_ |= 0x00000010;
+            chunkResult_ = input.readBool();
+            break;
+          }
+          case 120: {
+            bitField0_ |= 0x00002000;
+            useCtsTransaction_ = input.readBool();
+            break;
+          }
+          case 128: {
+            bitField0_ |= 0x00000020;
+            feedBack_ = input.readBool();
+            break;
+          }
+          case 136: {
+            bitField0_ |= 0x00004000;
+            capabilities_ = input.readUInt64();
+            break;
+          }
+          case 144: {
+            bitField0_ |= 0x00008000;
+            markDistributed_ = input.readBool();
+            break;
+          }
+          default: {
+            if (!parseUnknownField(
+                input, unknownFields, extensionRegistry, tag)) {
               done = true;
-              break;
-            case 10: {
-              bitField0_ |= 0x00000002;
-              stmt_ = input.readBytes();
-              break;
             }
-            case 18: {
-              if (!((mutable_bitField0_ & 0x00000040) != 0)) {
-                args_ = new java.util.ArrayList<com.mysql.cj.x.protobuf.PolarxDatatypes.Any>();
-                mutable_bitField0_ |= 0x00000040;
-              }
-              args_.add(
-                  input.readMessage(com.mysql.cj.x.protobuf.PolarxDatatypes.Any.PARSER, extensionRegistry));
-              break;
-            }
-            case 26: {
-              com.google.protobuf.ByteString bs = input.readBytes();
-              bitField0_ |= 0x00000001;
-              namespace_ = bs;
-              break;
-            }
-            case 32: {
-              bitField0_ |= 0x00000040;
-              compactMetadata_ = input.readBool();
-              break;
-            }
-            case 42: {
-              com.google.protobuf.ByteString bs = input.readBytes();
-              bitField0_ |= 0x00000080;
-              schemaName_ = bs;
-              break;
-            }
-            case 50: {
-              if (!((mutable_bitField0_ & 0x00000200) != 0)) {
-                sessionVariables_ = new java.util.ArrayList<com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariable>();
-                mutable_bitField0_ |= 0x00000200;
-              }
-              sessionVariables_.add(
-                  input.readMessage(com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariable.PARSER, extensionRegistry));
-              break;
-            }
-            case 58: {
-              com.google.protobuf.ByteString bs = input.readBytes();
-              bitField0_ |= 0x00000100;
-              encoding_ = bs;
-              break;
-            }
-            case 64: {
-              bitField0_ |= 0x00000200;
-              token_ = input.readInt32();
-              break;
-            }
-            case 72: {
-              bitField0_ |= 0x00000400;
-              resetError_ = input.readBool();
-              break;
-            }
-            case 80: {
-              bitField0_ |= 0x00000800;
-              snapshotSeq_ = input.readUInt64();
-              break;
-            }
-            case 88: {
-              bitField0_ |= 0x00001000;
-              commitSeq_ = input.readUInt64();
-              break;
-            }
-            case 98: {
-              bitField0_ |= 0x00000004;
-              stmtDigest_ = input.readBytes();
-              break;
-            }
-            case 106: {
-              bitField0_ |= 0x00000008;
-              hint_ = input.readBytes();
-              break;
-            }
-            case 112: {
-              bitField0_ |= 0x00000010;
-              chunkResult_ = input.readBool();
-              break;
-            }
-            case 120: {
-              bitField0_ |= 0x00002000;
-              useCtsTransaction_ = input.readBool();
-              break;
-            }
-            case 128: {
-              bitField0_ |= 0x00000020;
-              feedBack_ = input.readBool();
-              break;
-            }
-            case 136: {
-              bitField0_ |= 0x00004000;
-              capabilities_ = input.readUInt64();
-              break;
-            }
-            default: {
-              if (!parseUnknownField(
-                  input, unknownFields, extensionRegistry, tag)) {
-                done = true;
-              }
-              break;
-            }
+            break;
+          }
           }
         }
       } catch (com.google.protobuf.InvalidProtocolBufferException e) {
@@ -478,13 +502,13 @@ public final class PolarxSql {
       }
     }
     public static final com.google.protobuf.Descriptors.Descriptor
-        getDescriptor() {
+    getDescriptor() {
       return com.mysql.cj.polarx.protobuf.PolarxSql.internal_static_Polarx_Sql_StmtExecute_descriptor;
     }
 
     @java.lang.Override
     protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
-        internalGetFieldAccessorTable() {
+    internalGetFieldAccessorTable() {
       return com.mysql.cj.polarx.protobuf.PolarxSql.internal_static_Polarx_Sql_StmtExecute_fieldAccessorTable
           .ensureFieldAccessorsInitialized(
               com.mysql.cj.polarx.protobuf.PolarxSql.StmtExecute.class, com.mysql.cj.polarx.protobuf.PolarxSql.StmtExecute.Builder.class);
@@ -509,7 +533,7 @@ public final class PolarxSql {
       if (ref instanceof java.lang.String) {
         return (java.lang.String) ref;
       } else {
-        com.google.protobuf.ByteString bs = 
+        com.google.protobuf.ByteString bs =
             (com.google.protobuf.ByteString) ref;
         java.lang.String s = bs.toStringUtf8();
         if (bs.isValidUtf8()) {
@@ -523,10 +547,10 @@ public final class PolarxSql {
      * @return The bytes for namespace.
      */
     public com.google.protobuf.ByteString
-        getNamespaceBytes() {
+    getNamespaceBytes() {
       java.lang.Object ref = namespace_;
       if (ref instanceof java.lang.String) {
-        com.google.protobuf.ByteString b = 
+        com.google.protobuf.ByteString b =
             com.google.protobuf.ByteString.copyFromUtf8(
                 (java.lang.String) ref);
         namespace_ = b;
@@ -632,8 +656,8 @@ public final class PolarxSql {
     /**
      * <code>repeated .Polarx.Datatypes.Any args = 2;</code>
      */
-    public java.util.List<? extends com.mysql.cj.x.protobuf.PolarxDatatypes.AnyOrBuilder> 
-        getArgsOrBuilderList() {
+    public java.util.List<? extends com.mysql.cj.x.protobuf.PolarxDatatypes.AnyOrBuilder>
+    getArgsOrBuilderList() {
       return args_;
     }
     /**
@@ -699,7 +723,7 @@ public final class PolarxSql {
       if (ref instanceof java.lang.String) {
         return (java.lang.String) ref;
       } else {
-        com.google.protobuf.ByteString bs = 
+        com.google.protobuf.ByteString bs =
             (com.google.protobuf.ByteString) ref;
         java.lang.String s = bs.toStringUtf8();
         if (bs.isValidUtf8()) {
@@ -717,10 +741,10 @@ public final class PolarxSql {
      * @return The bytes for schemaName.
      */
     public com.google.protobuf.ByteString
-        getSchemaNameBytes() {
+    getSchemaNameBytes() {
       java.lang.Object ref = schemaName_;
       if (ref instanceof java.lang.String) {
-        com.google.protobuf.ByteString b = 
+        com.google.protobuf.ByteString b =
             com.google.protobuf.ByteString.copyFromUtf8(
                 (java.lang.String) ref);
         schemaName_ = b;
@@ -741,8 +765,8 @@ public final class PolarxSql {
     /**
      * <code>repeated .Polarx.Datatypes.SessionVariable session_variables = 6;</code>
      */
-    public java.util.List<? extends com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariableOrBuilder> 
-        getSessionVariablesOrBuilderList() {
+    public java.util.List<? extends com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariableOrBuilder>
+    getSessionVariablesOrBuilderList() {
       return sessionVariables_;
     }
     /**
@@ -783,7 +807,7 @@ public final class PolarxSql {
       if (ref instanceof java.lang.String) {
         return (java.lang.String) ref;
       } else {
-        com.google.protobuf.ByteString bs = 
+        com.google.protobuf.ByteString bs =
             (com.google.protobuf.ByteString) ref;
         java.lang.String s = bs.toStringUtf8();
         if (bs.isValidUtf8()) {
@@ -797,10 +821,10 @@ public final class PolarxSql {
      * @return The bytes for encoding.
      */
     public com.google.protobuf.ByteString
-        getEncodingBytes() {
+    getEncodingBytes() {
       java.lang.Object ref = encoding_;
       if (ref instanceof java.lang.String) {
-        com.google.protobuf.ByteString b = 
+        com.google.protobuf.ByteString b =
             com.google.protobuf.ByteString.copyFromUtf8(
                 (java.lang.String) ref);
         encoding_ = b;
@@ -920,6 +944,31 @@ public final class PolarxSql {
       return capabilities_;
     }
 
+    public static final int MARK_DISTRIBUTED_FIELD_NUMBER = 18;
+    private boolean markDistributed_;
+    /**
+     * <pre>
+     * innodb_mark_distributed
+     * </pre>
+     *
+     * <code>optional bool mark_distributed = 18;</code>
+     * @return Whether the markDistributed field is set.
+     */
+    public boolean hasMarkDistributed() {
+      return ((bitField0_ & 0x00008000) != 0);
+    }
+    /**
+     * <pre>
+     * innodb_mark_distributed
+     * </pre>
+     *
+     * <code>optional bool mark_distributed = 18;</code>
+     * @return The markDistributed.
+     */
+    public boolean getMarkDistributed() {
+      return markDistributed_;
+    }
+
     private byte memoizedIsInitialized = -1;
     @java.lang.Override
     public final boolean isInitialized() {
@@ -945,7 +994,7 @@ public final class PolarxSql {
 
     @java.lang.Override
     public void writeTo(com.google.protobuf.CodedOutputStream output)
-                        throws java.io.IOException {
+        throws java.io.IOException {
       if (((bitField0_ & 0x00000002) != 0)) {
         output.writeBytes(1, stmt_);
       }
@@ -997,6 +1046,9 @@ public final class PolarxSql {
       if (((bitField0_ & 0x00004000) != 0)) {
         output.writeUInt64(17, capabilities_);
       }
+      if (((bitField0_ & 0x00008000) != 0)) {
+        output.writeBool(18, markDistributed_);
+      }
       unknownFields.writeTo(output);
     }
 
@@ -1008,68 +1060,72 @@ public final class PolarxSql {
       size = 0;
       if (((bitField0_ & 0x00000002) != 0)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeBytesSize(1, stmt_);
+            .computeBytesSize(1, stmt_);
       }
       for (int i = 0; i < args_.size(); i++) {
         size += com.google.protobuf.CodedOutputStream
-          .computeMessageSize(2, args_.get(i));
+            .computeMessageSize(2, args_.get(i));
       }
       if (((bitField0_ & 0x00000001) != 0)) {
         size += com.google.protobuf.GeneratedMessageV3.computeStringSize(3, namespace_);
       }
       if (((bitField0_ & 0x00000040) != 0)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeBoolSize(4, compactMetadata_);
+            .computeBoolSize(4, compactMetadata_);
       }
       if (((bitField0_ & 0x00000080) != 0)) {
         size += com.google.protobuf.GeneratedMessageV3.computeStringSize(5, schemaName_);
       }
       for (int i = 0; i < sessionVariables_.size(); i++) {
         size += com.google.protobuf.CodedOutputStream
-          .computeMessageSize(6, sessionVariables_.get(i));
+            .computeMessageSize(6, sessionVariables_.get(i));
       }
       if (((bitField0_ & 0x00000100) != 0)) {
         size += com.google.protobuf.GeneratedMessageV3.computeStringSize(7, encoding_);
       }
       if (((bitField0_ & 0x00000200) != 0)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeInt32Size(8, token_);
+            .computeInt32Size(8, token_);
       }
       if (((bitField0_ & 0x00000400) != 0)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeBoolSize(9, resetError_);
+            .computeBoolSize(9, resetError_);
       }
       if (((bitField0_ & 0x00000800) != 0)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeUInt64Size(10, snapshotSeq_);
+            .computeUInt64Size(10, snapshotSeq_);
       }
       if (((bitField0_ & 0x00001000) != 0)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeUInt64Size(11, commitSeq_);
+            .computeUInt64Size(11, commitSeq_);
       }
       if (((bitField0_ & 0x00000004) != 0)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeBytesSize(12, stmtDigest_);
+            .computeBytesSize(12, stmtDigest_);
       }
       if (((bitField0_ & 0x00000008) != 0)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeBytesSize(13, hint_);
+            .computeBytesSize(13, hint_);
       }
       if (((bitField0_ & 0x00000010) != 0)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeBoolSize(14, chunkResult_);
+            .computeBoolSize(14, chunkResult_);
       }
       if (((bitField0_ & 0x00002000) != 0)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeBoolSize(15, useCtsTransaction_);
+            .computeBoolSize(15, useCtsTransaction_);
       }
       if (((bitField0_ & 0x00000020) != 0)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeBoolSize(16, feedBack_);
+            .computeBoolSize(16, feedBack_);
       }
       if (((bitField0_ & 0x00004000) != 0)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeUInt64Size(17, capabilities_);
+            .computeUInt64Size(17, capabilities_);
+      }
+      if (((bitField0_ & 0x00008000) != 0)) {
+        size += com.google.protobuf.CodedOutputStream
+            .computeBoolSize(18, markDistributed_);
       }
       size += unknownFields.getSerializedSize();
       memoizedSize = size;
@@ -1079,7 +1135,7 @@ public final class PolarxSql {
     @java.lang.Override
     public boolean equals(final java.lang.Object obj) {
       if (obj == this) {
-       return true;
+        return true;
       }
       if (!(obj instanceof com.mysql.cj.polarx.protobuf.PolarxSql.StmtExecute)) {
         return super.equals(obj);
@@ -1164,6 +1220,11 @@ public final class PolarxSql {
       if (hasCapabilities()) {
         if (getCapabilities()
             != other.getCapabilities()) return false;
+      }
+      if (hasMarkDistributed() != other.hasMarkDistributed()) return false;
+      if (hasMarkDistributed()) {
+        if (getMarkDistributed()
+            != other.getMarkDistributed()) return false;
       }
       if (!unknownFields.equals(other.unknownFields)) return false;
       return true;
@@ -1251,6 +1312,11 @@ public final class PolarxSql {
         hash = (37 * hash) + CAPABILITIES_FIELD_NUMBER;
         hash = (53 * hash) + com.google.protobuf.Internal.hashLong(
             getCapabilities());
+      }
+      if (hasMarkDistributed()) {
+        hash = (37 * hash) + MARK_DISTRIBUTED_FIELD_NUMBER;
+        hash = (53 * hash) + com.google.protobuf.Internal.hashBoolean(
+            getMarkDistributed());
       }
       hash = (29 * hash) + unknownFields.hashCode();
       memoizedHashCode = hash;
@@ -1372,13 +1438,13 @@ public final class PolarxSql {
         // @@protoc_insertion_point(builder_implements:Polarx.Sql.StmtExecute)
         com.mysql.cj.polarx.protobuf.PolarxSql.StmtExecuteOrBuilder {
       public static final com.google.protobuf.Descriptors.Descriptor
-          getDescriptor() {
+      getDescriptor() {
         return com.mysql.cj.polarx.protobuf.PolarxSql.internal_static_Polarx_Sql_StmtExecute_descriptor;
       }
 
       @java.lang.Override
       protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
-          internalGetFieldAccessorTable() {
+      internalGetFieldAccessorTable() {
         return com.mysql.cj.polarx.protobuf.PolarxSql.internal_static_Polarx_Sql_StmtExecute_fieldAccessorTable
             .ensureFieldAccessorsInitialized(
                 com.mysql.cj.polarx.protobuf.PolarxSql.StmtExecute.class, com.mysql.cj.polarx.protobuf.PolarxSql.StmtExecute.Builder.class);
@@ -1396,7 +1462,7 @@ public final class PolarxSql {
       }
       private void maybeForceBuilderInitialization() {
         if (com.google.protobuf.GeneratedMessageV3
-                .alwaysUseFieldBuilders) {
+            .alwaysUseFieldBuilders) {
           getArgsFieldBuilder();
           getSessionVariablesFieldBuilder();
         }
@@ -1446,12 +1512,14 @@ public final class PolarxSql {
         bitField0_ = (bitField0_ & ~0x00008000);
         capabilities_ = 0L;
         bitField0_ = (bitField0_ & ~0x00010000);
+        markDistributed_ = false;
+        bitField0_ = (bitField0_ & ~0x00020000);
         return this;
       }
 
       @java.lang.Override
       public com.google.protobuf.Descriptors.Descriptor
-          getDescriptorForType() {
+      getDescriptorForType() {
         return com.mysql.cj.polarx.protobuf.PolarxSql.internal_static_Polarx_Sql_StmtExecute_descriptor;
       }
 
@@ -1552,6 +1620,10 @@ public final class PolarxSql {
           result.capabilities_ = capabilities_;
           to_bitField0_ |= 0x00004000;
         }
+        if (((from_bitField0_ & 0x00020000) != 0)) {
+          result.markDistributed_ = markDistributed_;
+          to_bitField0_ |= 0x00008000;
+        }
         result.bitField0_ = to_bitField0_;
         onBuilt();
         return result;
@@ -1639,9 +1711,9 @@ public final class PolarxSql {
               argsBuilder_ = null;
               args_ = other.args_;
               bitField0_ = (bitField0_ & ~0x00000040);
-              argsBuilder_ = 
-                com.google.protobuf.GeneratedMessageV3.alwaysUseFieldBuilders ?
-                   getArgsFieldBuilder() : null;
+              argsBuilder_ =
+                  com.google.protobuf.GeneratedMessageV3.alwaysUseFieldBuilders ?
+                      getArgsFieldBuilder() : null;
             } else {
               argsBuilder_.addAllMessages(other.args_);
             }
@@ -1673,9 +1745,9 @@ public final class PolarxSql {
               sessionVariablesBuilder_ = null;
               sessionVariables_ = other.sessionVariables_;
               bitField0_ = (bitField0_ & ~0x00000200);
-              sessionVariablesBuilder_ = 
-                com.google.protobuf.GeneratedMessageV3.alwaysUseFieldBuilders ?
-                   getSessionVariablesFieldBuilder() : null;
+              sessionVariablesBuilder_ =
+                  com.google.protobuf.GeneratedMessageV3.alwaysUseFieldBuilders ?
+                      getSessionVariablesFieldBuilder() : null;
             } else {
               sessionVariablesBuilder_.addAllMessages(other.sessionVariables_);
             }
@@ -1703,6 +1775,9 @@ public final class PolarxSql {
         }
         if (other.hasCapabilities()) {
           setCapabilities(other.getCapabilities());
+        }
+        if (other.hasMarkDistributed()) {
+          setMarkDistributed(other.getMarkDistributed());
         }
         this.mergeUnknownFields(other.unknownFields);
         onChanged();
@@ -1775,10 +1850,10 @@ public final class PolarxSql {
        * @return The bytes for namespace.
        */
       public com.google.protobuf.ByteString
-          getNamespaceBytes() {
+      getNamespaceBytes() {
         java.lang.Object ref = namespace_;
         if (ref instanceof String) {
-          com.google.protobuf.ByteString b = 
+          com.google.protobuf.ByteString b =
               com.google.protobuf.ByteString.copyFromUtf8(
                   (java.lang.String) ref);
           namespace_ = b;
@@ -1795,9 +1870,9 @@ public final class PolarxSql {
       public Builder setNamespace(
           java.lang.String value) {
         if (value == null) {
-    throw new NullPointerException();
-  }
-  bitField0_ |= 0x00000001;
+          throw new NullPointerException();
+        }
+        bitField0_ |= 0x00000001;
         namespace_ = value;
         onChanged();
         return this;
@@ -1820,9 +1895,9 @@ public final class PolarxSql {
       public Builder setNamespaceBytes(
           com.google.protobuf.ByteString value) {
         if (value == null) {
-    throw new NullPointerException();
-  }
-  bitField0_ |= 0x00000001;
+          throw new NullPointerException();
+        }
+        bitField0_ |= 0x00000001;
         namespace_ = value;
         onChanged();
         return this;
@@ -1850,9 +1925,9 @@ public final class PolarxSql {
        */
       public Builder setStmt(com.google.protobuf.ByteString value) {
         if (value == null) {
-    throw new NullPointerException();
-  }
-  bitField0_ |= 0x00000002;
+          throw new NullPointerException();
+        }
+        bitField0_ |= 0x00000002;
         stmt_ = value;
         onChanged();
         return this;
@@ -1890,9 +1965,9 @@ public final class PolarxSql {
        */
       public Builder setStmtDigest(com.google.protobuf.ByteString value) {
         if (value == null) {
-    throw new NullPointerException();
-  }
-  bitField0_ |= 0x00000004;
+          throw new NullPointerException();
+        }
+        bitField0_ |= 0x00000004;
         stmtDigest_ = value;
         onChanged();
         return this;
@@ -1930,9 +2005,9 @@ public final class PolarxSql {
        */
       public Builder setHint(com.google.protobuf.ByteString value) {
         if (value == null) {
-    throw new NullPointerException();
-  }
-  bitField0_ |= 0x00000008;
+          throw new NullPointerException();
+        }
+        bitField0_ |= 0x00000008;
         hint_ = value;
         onChanged();
         return this;
@@ -2023,12 +2098,12 @@ public final class PolarxSql {
       }
 
       private java.util.List<com.mysql.cj.x.protobuf.PolarxDatatypes.Any> args_ =
-        java.util.Collections.emptyList();
+          java.util.Collections.emptyList();
       private void ensureArgsIsMutable() {
         if (!((bitField0_ & 0x00000040) != 0)) {
           args_ = new java.util.ArrayList<com.mysql.cj.x.protobuf.PolarxDatatypes.Any>(args_);
           bitField0_ |= 0x00000040;
-         }
+        }
       }
 
       private com.google.protobuf.RepeatedFieldBuilderV3<
@@ -2217,8 +2292,8 @@ public final class PolarxSql {
       /**
        * <code>repeated .Polarx.Datatypes.Any args = 2;</code>
        */
-      public java.util.List<? extends com.mysql.cj.x.protobuf.PolarxDatatypes.AnyOrBuilder> 
-           getArgsOrBuilderList() {
+      public java.util.List<? extends com.mysql.cj.x.protobuf.PolarxDatatypes.AnyOrBuilder>
+      getArgsOrBuilderList() {
         if (argsBuilder_ != null) {
           return argsBuilder_.getMessageOrBuilderList();
         } else {
@@ -2243,20 +2318,20 @@ public final class PolarxSql {
       /**
        * <code>repeated .Polarx.Datatypes.Any args = 2;</code>
        */
-      public java.util.List<com.mysql.cj.x.protobuf.PolarxDatatypes.Any.Builder> 
-           getArgsBuilderList() {
+      public java.util.List<com.mysql.cj.x.protobuf.PolarxDatatypes.Any.Builder>
+      getArgsBuilderList() {
         return getArgsFieldBuilder().getBuilderList();
       }
       private com.google.protobuf.RepeatedFieldBuilderV3<
-          com.mysql.cj.x.protobuf.PolarxDatatypes.Any, com.mysql.cj.x.protobuf.PolarxDatatypes.Any.Builder, com.mysql.cj.x.protobuf.PolarxDatatypes.AnyOrBuilder> 
-          getArgsFieldBuilder() {
+          com.mysql.cj.x.protobuf.PolarxDatatypes.Any, com.mysql.cj.x.protobuf.PolarxDatatypes.Any.Builder, com.mysql.cj.x.protobuf.PolarxDatatypes.AnyOrBuilder>
+      getArgsFieldBuilder() {
         if (argsBuilder_ == null) {
           argsBuilder_ = new com.google.protobuf.RepeatedFieldBuilderV3<
               com.mysql.cj.x.protobuf.PolarxDatatypes.Any, com.mysql.cj.x.protobuf.PolarxDatatypes.Any.Builder, com.mysql.cj.x.protobuf.PolarxDatatypes.AnyOrBuilder>(
-                  args_,
-                  ((bitField0_ & 0x00000040) != 0),
-                  getParentForChildren(),
-                  isClean());
+              args_,
+              ((bitField0_ & 0x00000040) != 0),
+              getParentForChildren(),
+              isClean());
           args_ = null;
         }
         return argsBuilder_;
@@ -2342,10 +2417,10 @@ public final class PolarxSql {
        * @return The bytes for schemaName.
        */
       public com.google.protobuf.ByteString
-          getSchemaNameBytes() {
+      getSchemaNameBytes() {
         java.lang.Object ref = schemaName_;
         if (ref instanceof String) {
-          com.google.protobuf.ByteString b = 
+          com.google.protobuf.ByteString b =
               com.google.protobuf.ByteString.copyFromUtf8(
                   (java.lang.String) ref);
           schemaName_ = b;
@@ -2366,9 +2441,9 @@ public final class PolarxSql {
       public Builder setSchemaName(
           java.lang.String value) {
         if (value == null) {
-    throw new NullPointerException();
-  }
-  bitField0_ |= 0x00000100;
+          throw new NullPointerException();
+        }
+        bitField0_ |= 0x00000100;
         schemaName_ = value;
         onChanged();
         return this;
@@ -2399,21 +2474,21 @@ public final class PolarxSql {
       public Builder setSchemaNameBytes(
           com.google.protobuf.ByteString value) {
         if (value == null) {
-    throw new NullPointerException();
-  }
-  bitField0_ |= 0x00000100;
+          throw new NullPointerException();
+        }
+        bitField0_ |= 0x00000100;
         schemaName_ = value;
         onChanged();
         return this;
       }
 
       private java.util.List<com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariable> sessionVariables_ =
-        java.util.Collections.emptyList();
+          java.util.Collections.emptyList();
       private void ensureSessionVariablesIsMutable() {
         if (!((bitField0_ & 0x00000200) != 0)) {
           sessionVariables_ = new java.util.ArrayList<com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariable>(sessionVariables_);
           bitField0_ |= 0x00000200;
-         }
+        }
       }
 
       private com.google.protobuf.RepeatedFieldBuilderV3<
@@ -2602,8 +2677,8 @@ public final class PolarxSql {
       /**
        * <code>repeated .Polarx.Datatypes.SessionVariable session_variables = 6;</code>
        */
-      public java.util.List<? extends com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariableOrBuilder> 
-           getSessionVariablesOrBuilderList() {
+      public java.util.List<? extends com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariableOrBuilder>
+      getSessionVariablesOrBuilderList() {
         if (sessionVariablesBuilder_ != null) {
           return sessionVariablesBuilder_.getMessageOrBuilderList();
         } else {
@@ -2628,20 +2703,20 @@ public final class PolarxSql {
       /**
        * <code>repeated .Polarx.Datatypes.SessionVariable session_variables = 6;</code>
        */
-      public java.util.List<com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariable.Builder> 
-           getSessionVariablesBuilderList() {
+      public java.util.List<com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariable.Builder>
+      getSessionVariablesBuilderList() {
         return getSessionVariablesFieldBuilder().getBuilderList();
       }
       private com.google.protobuf.RepeatedFieldBuilderV3<
-          com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariable, com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariable.Builder, com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariableOrBuilder> 
-          getSessionVariablesFieldBuilder() {
+          com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariable, com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariable.Builder, com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariableOrBuilder>
+      getSessionVariablesFieldBuilder() {
         if (sessionVariablesBuilder_ == null) {
           sessionVariablesBuilder_ = new com.google.protobuf.RepeatedFieldBuilderV3<
               com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariable, com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariable.Builder, com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariableOrBuilder>(
-                  sessionVariables_,
-                  ((bitField0_ & 0x00000200) != 0),
-                  getParentForChildren(),
-                  isClean());
+              sessionVariables_,
+              ((bitField0_ & 0x00000200) != 0),
+              getParentForChildren(),
+              isClean());
           sessionVariables_ = null;
         }
         return sessionVariablesBuilder_;
@@ -2678,10 +2753,10 @@ public final class PolarxSql {
        * @return The bytes for encoding.
        */
       public com.google.protobuf.ByteString
-          getEncodingBytes() {
+      getEncodingBytes() {
         java.lang.Object ref = encoding_;
         if (ref instanceof String) {
-          com.google.protobuf.ByteString b = 
+          com.google.protobuf.ByteString b =
               com.google.protobuf.ByteString.copyFromUtf8(
                   (java.lang.String) ref);
           encoding_ = b;
@@ -2698,9 +2773,9 @@ public final class PolarxSql {
       public Builder setEncoding(
           java.lang.String value) {
         if (value == null) {
-    throw new NullPointerException();
-  }
-  bitField0_ |= 0x00000400;
+          throw new NullPointerException();
+        }
+        bitField0_ |= 0x00000400;
         encoding_ = value;
         onChanged();
         return this;
@@ -2723,9 +2798,9 @@ public final class PolarxSql {
       public Builder setEncodingBytes(
           com.google.protobuf.ByteString value) {
         if (value == null) {
-    throw new NullPointerException();
-  }
-  bitField0_ |= 0x00000400;
+          throw new NullPointerException();
+        }
+        bitField0_ |= 0x00000400;
         encoding_ = value;
         onChanged();
         return this;
@@ -2968,6 +3043,59 @@ public final class PolarxSql {
         onChanged();
         return this;
       }
+
+      private boolean markDistributed_ ;
+      /**
+       * <pre>
+       * innodb_mark_distributed
+       * </pre>
+       *
+       * <code>optional bool mark_distributed = 18;</code>
+       * @return Whether the markDistributed field is set.
+       */
+      public boolean hasMarkDistributed() {
+        return ((bitField0_ & 0x00020000) != 0);
+      }
+      /**
+       * <pre>
+       * innodb_mark_distributed
+       * </pre>
+       *
+       * <code>optional bool mark_distributed = 18;</code>
+       * @return The markDistributed.
+       */
+      public boolean getMarkDistributed() {
+        return markDistributed_;
+      }
+      /**
+       * <pre>
+       * innodb_mark_distributed
+       * </pre>
+       *
+       * <code>optional bool mark_distributed = 18;</code>
+       * @param value The markDistributed to set.
+       * @return This builder for chaining.
+       */
+      public Builder setMarkDistributed(boolean value) {
+        bitField0_ |= 0x00020000;
+        markDistributed_ = value;
+        onChanged();
+        return this;
+      }
+      /**
+       * <pre>
+       * innodb_mark_distributed
+       * </pre>
+       *
+       * <code>optional bool mark_distributed = 18;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearMarkDistributed() {
+        bitField0_ = (bitField0_ & ~0x00020000);
+        markDistributed_ = false;
+        onChanged();
+        return this;
+      }
       @java.lang.Override
       public final Builder setUnknownFields(
           final com.google.protobuf.UnknownFieldSet unknownFields) {
@@ -3065,7 +3193,7 @@ public final class PolarxSql {
       com.google.protobuf.GeneratedMessageV3 implements
       // @@protoc_insertion_point(message_implements:Polarx.Sql.GalaxyPrepareTableData)
       GalaxyPrepareTableDataOrBuilder {
-  private static final long serialVersionUID = 0L;
+    private static final long serialVersionUID = 0L;
     // Use GalaxyPrepareTableData.newBuilder() to construct.
     private GalaxyPrepareTableData(com.google.protobuf.GeneratedMessageV3.Builder<?> builder) {
       super(builder);
@@ -3103,31 +3231,31 @@ public final class PolarxSql {
         while (!done) {
           int tag = input.readTag();
           switch (tag) {
-            case 0:
+          case 0:
+            done = true;
+            break;
+          case 8: {
+            bitField0_ |= 0x00000001;
+            tableIndex_ = input.readInt32();
+            break;
+          }
+          case 18: {
+            bitField0_ |= 0x00000002;
+            dbName_ = input.readBytes();
+            break;
+          }
+          case 26: {
+            bitField0_ |= 0x00000004;
+            tableName_ = input.readBytes();
+            break;
+          }
+          default: {
+            if (!parseUnknownField(
+                input, unknownFields, extensionRegistry, tag)) {
               done = true;
-              break;
-            case 8: {
-              bitField0_ |= 0x00000001;
-              tableIndex_ = input.readInt32();
-              break;
             }
-            case 18: {
-              bitField0_ |= 0x00000002;
-              dbName_ = input.readBytes();
-              break;
-            }
-            case 26: {
-              bitField0_ |= 0x00000004;
-              tableName_ = input.readBytes();
-              break;
-            }
-            default: {
-              if (!parseUnknownField(
-                  input, unknownFields, extensionRegistry, tag)) {
-                done = true;
-              }
-              break;
-            }
+            break;
+          }
           }
         }
       } catch (com.google.protobuf.InvalidProtocolBufferException e) {
@@ -3141,13 +3269,13 @@ public final class PolarxSql {
       }
     }
     public static final com.google.protobuf.Descriptors.Descriptor
-        getDescriptor() {
+    getDescriptor() {
       return com.mysql.cj.polarx.protobuf.PolarxSql.internal_static_Polarx_Sql_GalaxyPrepareTableData_descriptor;
     }
 
     @java.lang.Override
     protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
-        internalGetFieldAccessorTable() {
+    internalGetFieldAccessorTable() {
       return com.mysql.cj.polarx.protobuf.PolarxSql.internal_static_Polarx_Sql_GalaxyPrepareTableData_fieldAccessorTable
           .ensureFieldAccessorsInitialized(
               com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareTableData.class, com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareTableData.Builder.class);
@@ -3226,7 +3354,7 @@ public final class PolarxSql {
 
     @java.lang.Override
     public void writeTo(com.google.protobuf.CodedOutputStream output)
-                        throws java.io.IOException {
+        throws java.io.IOException {
       if (((bitField0_ & 0x00000001) != 0)) {
         output.writeInt32(1, tableIndex_);
       }
@@ -3247,15 +3375,15 @@ public final class PolarxSql {
       size = 0;
       if (((bitField0_ & 0x00000001) != 0)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeInt32Size(1, tableIndex_);
+            .computeInt32Size(1, tableIndex_);
       }
       if (((bitField0_ & 0x00000002) != 0)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeBytesSize(2, dbName_);
+            .computeBytesSize(2, dbName_);
       }
       if (((bitField0_ & 0x00000004) != 0)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeBytesSize(3, tableName_);
+            .computeBytesSize(3, tableName_);
       }
       size += unknownFields.getSerializedSize();
       memoizedSize = size;
@@ -3265,7 +3393,7 @@ public final class PolarxSql {
     @java.lang.Override
     public boolean equals(final java.lang.Object obj) {
       if (obj == this) {
-       return true;
+        return true;
       }
       if (!(obj instanceof com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareTableData)) {
         return super.equals(obj);
@@ -3413,13 +3541,13 @@ public final class PolarxSql {
         // @@protoc_insertion_point(builder_implements:Polarx.Sql.GalaxyPrepareTableData)
         com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareTableDataOrBuilder {
       public static final com.google.protobuf.Descriptors.Descriptor
-          getDescriptor() {
+      getDescriptor() {
         return com.mysql.cj.polarx.protobuf.PolarxSql.internal_static_Polarx_Sql_GalaxyPrepareTableData_descriptor;
       }
 
       @java.lang.Override
       protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
-          internalGetFieldAccessorTable() {
+      internalGetFieldAccessorTable() {
         return com.mysql.cj.polarx.protobuf.PolarxSql.internal_static_Polarx_Sql_GalaxyPrepareTableData_fieldAccessorTable
             .ensureFieldAccessorsInitialized(
                 com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareTableData.class, com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareTableData.Builder.class);
@@ -3437,7 +3565,7 @@ public final class PolarxSql {
       }
       private void maybeForceBuilderInitialization() {
         if (com.google.protobuf.GeneratedMessageV3
-                .alwaysUseFieldBuilders) {
+            .alwaysUseFieldBuilders) {
         }
       }
       @java.lang.Override
@@ -3454,7 +3582,7 @@ public final class PolarxSql {
 
       @java.lang.Override
       public com.google.protobuf.Descriptors.Descriptor
-          getDescriptorForType() {
+      getDescriptorForType() {
         return com.mysql.cj.polarx.protobuf.PolarxSql.internal_static_Polarx_Sql_GalaxyPrepareTableData_descriptor;
       }
 
@@ -3642,9 +3770,9 @@ public final class PolarxSql {
        */
       public Builder setDbName(com.google.protobuf.ByteString value) {
         if (value == null) {
-    throw new NullPointerException();
-  }
-  bitField0_ |= 0x00000002;
+          throw new NullPointerException();
+        }
+        bitField0_ |= 0x00000002;
         dbName_ = value;
         onChanged();
         return this;
@@ -3682,9 +3810,9 @@ public final class PolarxSql {
        */
       public Builder setTableName(com.google.protobuf.ByteString value) {
         if (value == null) {
-    throw new NullPointerException();
-  }
-  bitField0_ |= 0x00000004;
+          throw new NullPointerException();
+        }
+        bitField0_ |= 0x00000004;
         tableName_ = value;
         onChanged();
         return this;
@@ -3792,8 +3920,8 @@ public final class PolarxSql {
     /**
      * <code>repeated .Polarx.Sql.GalaxyPrepareTableData tables = 4;</code>
      */
-    java.util.List<com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareTableData> 
-        getTablesList();
+    java.util.List<com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareTableData>
+    getTablesList();
     /**
      * <code>repeated .Polarx.Sql.GalaxyPrepareTableData tables = 4;</code>
      */
@@ -3805,8 +3933,8 @@ public final class PolarxSql {
     /**
      * <code>repeated .Polarx.Sql.GalaxyPrepareTableData tables = 4;</code>
      */
-    java.util.List<? extends com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareTableDataOrBuilder> 
-        getTablesOrBuilderList();
+    java.util.List<? extends com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareTableDataOrBuilder>
+    getTablesOrBuilderList();
     /**
      * <code>repeated .Polarx.Sql.GalaxyPrepareTableData tables = 4;</code>
      */
@@ -3889,13 +4017,13 @@ public final class PolarxSql {
      * @return The bytes for dbName.
      */
     com.google.protobuf.ByteString
-        getDbNameBytes();
+    getDbNameBytes();
 
     /**
      * <code>repeated .Polarx.Datatypes.SessionVariable session_variables = 8;</code>
      */
-    java.util.List<com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariable> 
-        getSessionVariablesList();
+    java.util.List<com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariable>
+    getSessionVariablesList();
     /**
      * <code>repeated .Polarx.Datatypes.SessionVariable session_variables = 8;</code>
      */
@@ -3907,8 +4035,8 @@ public final class PolarxSql {
     /**
      * <code>repeated .Polarx.Datatypes.SessionVariable session_variables = 8;</code>
      */
-    java.util.List<? extends com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariableOrBuilder> 
-        getSessionVariablesOrBuilderList();
+    java.util.List<? extends com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariableOrBuilder>
+    getSessionVariablesOrBuilderList();
     /**
      * <code>repeated .Polarx.Datatypes.SessionVariable session_variables = 8;</code>
      */
@@ -3930,7 +4058,7 @@ public final class PolarxSql {
      * @return The bytes for encoding.
      */
     com.google.protobuf.ByteString
-        getEncodingBytes();
+    getEncodingBytes();
 
     /**
      * <code>optional int32 token = 10;</code>
@@ -4035,6 +4163,17 @@ public final class PolarxSql {
      * @return The capabilities.
      */
     long getCapabilities();
+
+    /**
+     * <code>optional bool mark_distributed = 19;</code>
+     * @return Whether the markDistributed field is set.
+     */
+    boolean hasMarkDistributed();
+    /**
+     * <code>optional bool mark_distributed = 19;</code>
+     * @return The markDistributed.
+     */
+    boolean getMarkDistributed();
   }
   /**
    * Protobuf type {@code Polarx.Sql.GalaxyPrepareExecute}
@@ -4043,7 +4182,7 @@ public final class PolarxSql {
       com.google.protobuf.GeneratedMessageV3 implements
       // @@protoc_insertion_point(message_implements:Polarx.Sql.GalaxyPrepareExecute)
       GalaxyPrepareExecuteOrBuilder {
-  private static final long serialVersionUID = 0L;
+    private static final long serialVersionUID = 0L;
     // Use GalaxyPrepareExecute.newBuilder() to construct.
     private GalaxyPrepareExecute(com.google.protobuf.GeneratedMessageV3.Builder<?> builder) {
       super(builder);
@@ -4088,123 +4227,128 @@ public final class PolarxSql {
         while (!done) {
           int tag = input.readTag();
           switch (tag) {
-            case 0:
+          case 0:
+            done = true;
+            break;
+          case 10: {
+            bitField0_ |= 0x00000001;
+            stmt_ = input.readBytes();
+            break;
+          }
+          case 18: {
+            bitField0_ |= 0x00000002;
+            stmtDigest_ = input.readBytes();
+            break;
+          }
+          case 26: {
+            bitField0_ |= 0x00000004;
+            hint_ = input.readBytes();
+            break;
+          }
+          case 34: {
+            if (!((mutable_bitField0_ & 0x00000008) != 0)) {
+              tables_ = new java.util.ArrayList<com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareTableData>();
+              mutable_bitField0_ |= 0x00000008;
+            }
+            tables_.add(
+                input.readMessage(com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareTableData.PARSER, extensionRegistry));
+            break;
+          }
+          case 42: {
+            bitField0_ |= 0x00000008;
+            param_ = input.readBytes();
+            break;
+          }
+          case 48: {
+            bitField0_ |= 0x00000020;
+            compactMetadata_ = input.readBool();
+            break;
+          }
+          case 58: {
+            com.google.protobuf.ByteString bs = input.readBytes();
+            bitField0_ |= 0x00000040;
+            dbName_ = bs;
+            break;
+          }
+          case 66: {
+            if (!((mutable_bitField0_ & 0x00000100) != 0)) {
+              sessionVariables_ = new java.util.ArrayList<com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariable>();
+              mutable_bitField0_ |= 0x00000100;
+            }
+            sessionVariables_.add(
+                input.readMessage(com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariable.PARSER, extensionRegistry));
+            break;
+          }
+          case 74: {
+            com.google.protobuf.ByteString bs = input.readBytes();
+            bitField0_ |= 0x00000080;
+            encoding_ = bs;
+            break;
+          }
+          case 80: {
+            bitField0_ |= 0x00000100;
+            token_ = input.readInt32();
+            break;
+          }
+          case 88: {
+            bitField0_ |= 0x00000200;
+            resetError_ = input.readBool();
+            break;
+          }
+          case 96: {
+            bitField0_ |= 0x00000400;
+            snapshotSeq_ = input.readUInt64();
+            break;
+          }
+          case 104: {
+            bitField0_ |= 0x00000800;
+            commitSeq_ = input.readUInt64();
+            break;
+          }
+          case 112: {
+            bitField0_ |= 0x00001000;
+            useCtsTransaction_ = input.readBool();
+            break;
+          }
+          case 120: {
+            int rawValue = input.readEnum();
+            @SuppressWarnings("deprecation")
+            com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareExecute.ResultSetType value = com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareExecute.ResultSetType.valueOf(rawValue);
+            if (value == null) {
+              unknownFields.mergeVarintField(15, rawValue);
+            } else {
+              bitField0_ |= 0x00002000;
+              resultSetType_ = rawValue;
+            }
+            break;
+          }
+          case 128: {
+            bitField0_ |= 0x00004000;
+            feedBack_ = input.readBool();
+            break;
+          }
+          case 136: {
+            bitField0_ |= 0x00000010;
+            paramNum_ = input.readInt32();
+            break;
+          }
+          case 144: {
+            bitField0_ |= 0x00008000;
+            capabilities_ = input.readUInt64();
+            break;
+          }
+          case 152: {
+            bitField0_ |= 0x00010000;
+            markDistributed_ = input.readBool();
+            break;
+          }
+          default: {
+            if (!parseUnknownField(
+                input, unknownFields, extensionRegistry, tag)) {
               done = true;
-              break;
-            case 10: {
-              bitField0_ |= 0x00000001;
-              stmt_ = input.readBytes();
-              break;
             }
-            case 18: {
-              bitField0_ |= 0x00000002;
-              stmtDigest_ = input.readBytes();
-              break;
-            }
-            case 26: {
-              bitField0_ |= 0x00000004;
-              hint_ = input.readBytes();
-              break;
-            }
-            case 34: {
-              if (!((mutable_bitField0_ & 0x00000008) != 0)) {
-                tables_ = new java.util.ArrayList<com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareTableData>();
-                mutable_bitField0_ |= 0x00000008;
-              }
-              tables_.add(
-                  input.readMessage(com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareTableData.PARSER, extensionRegistry));
-              break;
-            }
-            case 42: {
-              bitField0_ |= 0x00000008;
-              param_ = input.readBytes();
-              break;
-            }
-            case 48: {
-              bitField0_ |= 0x00000020;
-              compactMetadata_ = input.readBool();
-              break;
-            }
-            case 58: {
-              com.google.protobuf.ByteString bs = input.readBytes();
-              bitField0_ |= 0x00000040;
-              dbName_ = bs;
-              break;
-            }
-            case 66: {
-              if (!((mutable_bitField0_ & 0x00000100) != 0)) {
-                sessionVariables_ = new java.util.ArrayList<com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariable>();
-                mutable_bitField0_ |= 0x00000100;
-              }
-              sessionVariables_.add(
-                  input.readMessage(com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariable.PARSER, extensionRegistry));
-              break;
-            }
-            case 74: {
-              com.google.protobuf.ByteString bs = input.readBytes();
-              bitField0_ |= 0x00000080;
-              encoding_ = bs;
-              break;
-            }
-            case 80: {
-              bitField0_ |= 0x00000100;
-              token_ = input.readInt32();
-              break;
-            }
-            case 88: {
-              bitField0_ |= 0x00000200;
-              resetError_ = input.readBool();
-              break;
-            }
-            case 96: {
-              bitField0_ |= 0x00000400;
-              snapshotSeq_ = input.readUInt64();
-              break;
-            }
-            case 104: {
-              bitField0_ |= 0x00000800;
-              commitSeq_ = input.readUInt64();
-              break;
-            }
-            case 112: {
-              bitField0_ |= 0x00001000;
-              useCtsTransaction_ = input.readBool();
-              break;
-            }
-            case 120: {
-              int rawValue = input.readEnum();
-                @SuppressWarnings("deprecation")
-              com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareExecute.ResultSetType value = com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareExecute.ResultSetType.valueOf(rawValue);
-              if (value == null) {
-                unknownFields.mergeVarintField(15, rawValue);
-              } else {
-                bitField0_ |= 0x00002000;
-                resultSetType_ = rawValue;
-              }
-              break;
-            }
-            case 128: {
-              bitField0_ |= 0x00004000;
-              feedBack_ = input.readBool();
-              break;
-            }
-            case 136: {
-              bitField0_ |= 0x00000010;
-              paramNum_ = input.readInt32();
-              break;
-            }
-            case 144: {
-              bitField0_ |= 0x00008000;
-              capabilities_ = input.readUInt64();
-              break;
-            }
-            default: {
-              if (!parseUnknownField(
-                  input, unknownFields, extensionRegistry, tag)) {
-                done = true;
-              }
-              break;
-            }
+            break;
+          }
           }
         }
       } catch (com.google.protobuf.InvalidProtocolBufferException e) {
@@ -4224,13 +4368,13 @@ public final class PolarxSql {
       }
     }
     public static final com.google.protobuf.Descriptors.Descriptor
-        getDescriptor() {
+    getDescriptor() {
       return com.mysql.cj.polarx.protobuf.PolarxSql.internal_static_Polarx_Sql_GalaxyPrepareExecute_descriptor;
     }
 
     @java.lang.Override
     protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
-        internalGetFieldAccessorTable() {
+    internalGetFieldAccessorTable() {
       return com.mysql.cj.polarx.protobuf.PolarxSql.internal_static_Polarx_Sql_GalaxyPrepareExecute_fieldAccessorTable
           .ensureFieldAccessorsInitialized(
               com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareExecute.class, com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareExecute.Builder.class);
@@ -4285,34 +4429,34 @@ public final class PolarxSql {
        */
       public static ResultSetType forNumber(int value) {
         switch (value) {
-          case 1: return ROW;
-          case 2: return CHUNK_V1;
-          default: return null;
+        case 1: return ROW;
+        case 2: return CHUNK_V1;
+        default: return null;
         }
       }
 
       public static com.google.protobuf.Internal.EnumLiteMap<ResultSetType>
-          internalGetValueMap() {
+      internalGetValueMap() {
         return internalValueMap;
       }
       private static final com.google.protobuf.Internal.EnumLiteMap<
           ResultSetType> internalValueMap =
-            new com.google.protobuf.Internal.EnumLiteMap<ResultSetType>() {
-              public ResultSetType findValueByNumber(int number) {
-                return ResultSetType.forNumber(number);
-              }
-            };
+          new com.google.protobuf.Internal.EnumLiteMap<ResultSetType>() {
+            public ResultSetType findValueByNumber(int number) {
+              return ResultSetType.forNumber(number);
+            }
+          };
 
       public final com.google.protobuf.Descriptors.EnumValueDescriptor
-          getValueDescriptor() {
+      getValueDescriptor() {
         return getDescriptor().getValues().get(ordinal());
       }
       public final com.google.protobuf.Descriptors.EnumDescriptor
-          getDescriptorForType() {
+      getDescriptorForType() {
         return getDescriptor();
       }
       public static final com.google.protobuf.Descriptors.EnumDescriptor
-          getDescriptor() {
+      getDescriptor() {
         return com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareExecute.getDescriptor().getEnumTypes().get(0);
       }
 
@@ -4322,7 +4466,7 @@ public final class PolarxSql {
           com.google.protobuf.Descriptors.EnumValueDescriptor desc) {
         if (desc.getType() != getDescriptor()) {
           throw new java.lang.IllegalArgumentException(
-            "EnumValueDescriptor is not for this type.");
+              "EnumValueDescriptor is not for this type.");
         }
         return VALUES[desc.getIndex()];
       }
@@ -4399,8 +4543,8 @@ public final class PolarxSql {
     /**
      * <code>repeated .Polarx.Sql.GalaxyPrepareTableData tables = 4;</code>
      */
-    public java.util.List<? extends com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareTableDataOrBuilder> 
-        getTablesOrBuilderList() {
+    public java.util.List<? extends com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareTableDataOrBuilder>
+    getTablesOrBuilderList() {
       return tables_;
     }
     /**
@@ -4516,7 +4660,7 @@ public final class PolarxSql {
       if (ref instanceof java.lang.String) {
         return (java.lang.String) ref;
       } else {
-        com.google.protobuf.ByteString bs = 
+        com.google.protobuf.ByteString bs =
             (com.google.protobuf.ByteString) ref;
         java.lang.String s = bs.toStringUtf8();
         if (bs.isValidUtf8()) {
@@ -4534,10 +4678,10 @@ public final class PolarxSql {
      * @return The bytes for dbName.
      */
     public com.google.protobuf.ByteString
-        getDbNameBytes() {
+    getDbNameBytes() {
       java.lang.Object ref = dbName_;
       if (ref instanceof java.lang.String) {
-        com.google.protobuf.ByteString b = 
+        com.google.protobuf.ByteString b =
             com.google.protobuf.ByteString.copyFromUtf8(
                 (java.lang.String) ref);
         dbName_ = b;
@@ -4558,8 +4702,8 @@ public final class PolarxSql {
     /**
      * <code>repeated .Polarx.Datatypes.SessionVariable session_variables = 8;</code>
      */
-    public java.util.List<? extends com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariableOrBuilder> 
-        getSessionVariablesOrBuilderList() {
+    public java.util.List<? extends com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariableOrBuilder>
+    getSessionVariablesOrBuilderList() {
       return sessionVariables_;
     }
     /**
@@ -4600,7 +4744,7 @@ public final class PolarxSql {
       if (ref instanceof java.lang.String) {
         return (java.lang.String) ref;
       } else {
-        com.google.protobuf.ByteString bs = 
+        com.google.protobuf.ByteString bs =
             (com.google.protobuf.ByteString) ref;
         java.lang.String s = bs.toStringUtf8();
         if (bs.isValidUtf8()) {
@@ -4614,10 +4758,10 @@ public final class PolarxSql {
      * @return The bytes for encoding.
      */
     public com.google.protobuf.ByteString
-        getEncodingBytes() {
+    getEncodingBytes() {
       java.lang.Object ref = encoding_;
       if (ref instanceof java.lang.String) {
-        com.google.protobuf.ByteString b = 
+        com.google.protobuf.ByteString b =
             com.google.protobuf.ByteString.copyFromUtf8(
                 (java.lang.String) ref);
         encoding_ = b;
@@ -4781,6 +4925,23 @@ public final class PolarxSql {
       return capabilities_;
     }
 
+    public static final int MARK_DISTRIBUTED_FIELD_NUMBER = 19;
+    private boolean markDistributed_;
+    /**
+     * <code>optional bool mark_distributed = 19;</code>
+     * @return Whether the markDistributed field is set.
+     */
+    public boolean hasMarkDistributed() {
+      return ((bitField0_ & 0x00010000) != 0);
+    }
+    /**
+     * <code>optional bool mark_distributed = 19;</code>
+     * @return The markDistributed.
+     */
+    public boolean getMarkDistributed() {
+      return markDistributed_;
+    }
+
     private byte memoizedIsInitialized = -1;
     @java.lang.Override
     public final boolean isInitialized() {
@@ -4806,7 +4967,7 @@ public final class PolarxSql {
 
     @java.lang.Override
     public void writeTo(com.google.protobuf.CodedOutputStream output)
-                        throws java.io.IOException {
+        throws java.io.IOException {
       if (((bitField0_ & 0x00000001) != 0)) {
         output.writeBytes(1, stmt_);
       }
@@ -4861,6 +5022,9 @@ public final class PolarxSql {
       if (((bitField0_ & 0x00008000) != 0)) {
         output.writeUInt64(18, capabilities_);
       }
+      if (((bitField0_ & 0x00010000) != 0)) {
+        output.writeBool(19, markDistributed_);
+      }
       unknownFields.writeTo(output);
     }
 
@@ -4872,73 +5036,77 @@ public final class PolarxSql {
       size = 0;
       if (((bitField0_ & 0x00000001) != 0)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeBytesSize(1, stmt_);
+            .computeBytesSize(1, stmt_);
       }
       if (((bitField0_ & 0x00000002) != 0)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeBytesSize(2, stmtDigest_);
+            .computeBytesSize(2, stmtDigest_);
       }
       if (((bitField0_ & 0x00000004) != 0)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeBytesSize(3, hint_);
+            .computeBytesSize(3, hint_);
       }
       for (int i = 0; i < tables_.size(); i++) {
         size += com.google.protobuf.CodedOutputStream
-          .computeMessageSize(4, tables_.get(i));
+            .computeMessageSize(4, tables_.get(i));
       }
       if (((bitField0_ & 0x00000008) != 0)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeBytesSize(5, param_);
+            .computeBytesSize(5, param_);
       }
       if (((bitField0_ & 0x00000020) != 0)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeBoolSize(6, compactMetadata_);
+            .computeBoolSize(6, compactMetadata_);
       }
       if (((bitField0_ & 0x00000040) != 0)) {
         size += com.google.protobuf.GeneratedMessageV3.computeStringSize(7, dbName_);
       }
       for (int i = 0; i < sessionVariables_.size(); i++) {
         size += com.google.protobuf.CodedOutputStream
-          .computeMessageSize(8, sessionVariables_.get(i));
+            .computeMessageSize(8, sessionVariables_.get(i));
       }
       if (((bitField0_ & 0x00000080) != 0)) {
         size += com.google.protobuf.GeneratedMessageV3.computeStringSize(9, encoding_);
       }
       if (((bitField0_ & 0x00000100) != 0)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeInt32Size(10, token_);
+            .computeInt32Size(10, token_);
       }
       if (((bitField0_ & 0x00000200) != 0)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeBoolSize(11, resetError_);
+            .computeBoolSize(11, resetError_);
       }
       if (((bitField0_ & 0x00000400) != 0)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeUInt64Size(12, snapshotSeq_);
+            .computeUInt64Size(12, snapshotSeq_);
       }
       if (((bitField0_ & 0x00000800) != 0)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeUInt64Size(13, commitSeq_);
+            .computeUInt64Size(13, commitSeq_);
       }
       if (((bitField0_ & 0x00001000) != 0)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeBoolSize(14, useCtsTransaction_);
+            .computeBoolSize(14, useCtsTransaction_);
       }
       if (((bitField0_ & 0x00002000) != 0)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeEnumSize(15, resultSetType_);
+            .computeEnumSize(15, resultSetType_);
       }
       if (((bitField0_ & 0x00004000) != 0)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeBoolSize(16, feedBack_);
+            .computeBoolSize(16, feedBack_);
       }
       if (((bitField0_ & 0x00000010) != 0)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeInt32Size(17, paramNum_);
+            .computeInt32Size(17, paramNum_);
       }
       if (((bitField0_ & 0x00008000) != 0)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeUInt64Size(18, capabilities_);
+            .computeUInt64Size(18, capabilities_);
+      }
+      if (((bitField0_ & 0x00010000) != 0)) {
+        size += com.google.protobuf.CodedOutputStream
+            .computeBoolSize(19, markDistributed_);
       }
       size += unknownFields.getSerializedSize();
       memoizedSize = size;
@@ -4948,7 +5116,7 @@ public final class PolarxSql {
     @java.lang.Override
     public boolean equals(final java.lang.Object obj) {
       if (obj == this) {
-       return true;
+        return true;
       }
       if (!(obj instanceof com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareExecute)) {
         return super.equals(obj);
@@ -5037,6 +5205,11 @@ public final class PolarxSql {
       if (hasCapabilities()) {
         if (getCapabilities()
             != other.getCapabilities()) return false;
+      }
+      if (hasMarkDistributed() != other.hasMarkDistributed()) return false;
+      if (hasMarkDistributed()) {
+        if (getMarkDistributed()
+            != other.getMarkDistributed()) return false;
       }
       if (!unknownFields.equals(other.unknownFields)) return false;
       return true;
@@ -5127,6 +5300,11 @@ public final class PolarxSql {
         hash = (37 * hash) + CAPABILITIES_FIELD_NUMBER;
         hash = (53 * hash) + com.google.protobuf.Internal.hashLong(
             getCapabilities());
+      }
+      if (hasMarkDistributed()) {
+        hash = (37 * hash) + MARK_DISTRIBUTED_FIELD_NUMBER;
+        hash = (53 * hash) + com.google.protobuf.Internal.hashBoolean(
+            getMarkDistributed());
       }
       hash = (29 * hash) + unknownFields.hashCode();
       memoizedHashCode = hash;
@@ -5231,13 +5409,13 @@ public final class PolarxSql {
         // @@protoc_insertion_point(builder_implements:Polarx.Sql.GalaxyPrepareExecute)
         com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareExecuteOrBuilder {
       public static final com.google.protobuf.Descriptors.Descriptor
-          getDescriptor() {
+      getDescriptor() {
         return com.mysql.cj.polarx.protobuf.PolarxSql.internal_static_Polarx_Sql_GalaxyPrepareExecute_descriptor;
       }
 
       @java.lang.Override
       protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
-          internalGetFieldAccessorTable() {
+      internalGetFieldAccessorTable() {
         return com.mysql.cj.polarx.protobuf.PolarxSql.internal_static_Polarx_Sql_GalaxyPrepareExecute_fieldAccessorTable
             .ensureFieldAccessorsInitialized(
                 com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareExecute.class, com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareExecute.Builder.class);
@@ -5255,7 +5433,7 @@ public final class PolarxSql {
       }
       private void maybeForceBuilderInitialization() {
         if (com.google.protobuf.GeneratedMessageV3
-                .alwaysUseFieldBuilders) {
+            .alwaysUseFieldBuilders) {
           getTablesFieldBuilder();
           getSessionVariablesFieldBuilder();
         }
@@ -5307,12 +5485,14 @@ public final class PolarxSql {
         bitField0_ = (bitField0_ & ~0x00010000);
         capabilities_ = 0L;
         bitField0_ = (bitField0_ & ~0x00020000);
+        markDistributed_ = false;
+        bitField0_ = (bitField0_ & ~0x00040000);
         return this;
       }
 
       @java.lang.Override
       public com.google.protobuf.Descriptors.Descriptor
-          getDescriptorForType() {
+      getDescriptorForType() {
         return com.mysql.cj.polarx.protobuf.PolarxSql.internal_static_Polarx_Sql_GalaxyPrepareExecute_descriptor;
       }
 
@@ -5417,6 +5597,10 @@ public final class PolarxSql {
           result.capabilities_ = capabilities_;
           to_bitField0_ |= 0x00008000;
         }
+        if (((from_bitField0_ & 0x00040000) != 0)) {
+          result.markDistributed_ = markDistributed_;
+          to_bitField0_ |= 0x00010000;
+        }
         result.bitField0_ = to_bitField0_;
         onBuilt();
         return result;
@@ -5493,9 +5677,9 @@ public final class PolarxSql {
               tablesBuilder_ = null;
               tables_ = other.tables_;
               bitField0_ = (bitField0_ & ~0x00000008);
-              tablesBuilder_ = 
-                com.google.protobuf.GeneratedMessageV3.alwaysUseFieldBuilders ?
-                   getTablesFieldBuilder() : null;
+              tablesBuilder_ =
+                  com.google.protobuf.GeneratedMessageV3.alwaysUseFieldBuilders ?
+                      getTablesFieldBuilder() : null;
             } else {
               tablesBuilder_.addAllMessages(other.tables_);
             }
@@ -5533,9 +5717,9 @@ public final class PolarxSql {
               sessionVariablesBuilder_ = null;
               sessionVariables_ = other.sessionVariables_;
               bitField0_ = (bitField0_ & ~0x00000100);
-              sessionVariablesBuilder_ = 
-                com.google.protobuf.GeneratedMessageV3.alwaysUseFieldBuilders ?
-                   getSessionVariablesFieldBuilder() : null;
+              sessionVariablesBuilder_ =
+                  com.google.protobuf.GeneratedMessageV3.alwaysUseFieldBuilders ?
+                      getSessionVariablesFieldBuilder() : null;
             } else {
               sessionVariablesBuilder_.addAllMessages(other.sessionVariables_);
             }
@@ -5569,6 +5753,9 @@ public final class PolarxSql {
         }
         if (other.hasCapabilities()) {
           setCapabilities(other.getCapabilities());
+        }
+        if (other.hasMarkDistributed()) {
+          setMarkDistributed(other.getMarkDistributed());
         }
         this.mergeUnknownFields(other.unknownFields);
         onChanged();
@@ -5632,9 +5819,9 @@ public final class PolarxSql {
        */
       public Builder setStmt(com.google.protobuf.ByteString value) {
         if (value == null) {
-    throw new NullPointerException();
-  }
-  bitField0_ |= 0x00000001;
+          throw new NullPointerException();
+        }
+        bitField0_ |= 0x00000001;
         stmt_ = value;
         onChanged();
         return this;
@@ -5672,9 +5859,9 @@ public final class PolarxSql {
        */
       public Builder setStmtDigest(com.google.protobuf.ByteString value) {
         if (value == null) {
-    throw new NullPointerException();
-  }
-  bitField0_ |= 0x00000002;
+          throw new NullPointerException();
+        }
+        bitField0_ |= 0x00000002;
         stmtDigest_ = value;
         onChanged();
         return this;
@@ -5712,9 +5899,9 @@ public final class PolarxSql {
        */
       public Builder setHint(com.google.protobuf.ByteString value) {
         if (value == null) {
-    throw new NullPointerException();
-  }
-  bitField0_ |= 0x00000004;
+          throw new NullPointerException();
+        }
+        bitField0_ |= 0x00000004;
         hint_ = value;
         onChanged();
         return this;
@@ -5731,12 +5918,12 @@ public final class PolarxSql {
       }
 
       private java.util.List<com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareTableData> tables_ =
-        java.util.Collections.emptyList();
+          java.util.Collections.emptyList();
       private void ensureTablesIsMutable() {
         if (!((bitField0_ & 0x00000008) != 0)) {
           tables_ = new java.util.ArrayList<com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareTableData>(tables_);
           bitField0_ |= 0x00000008;
-         }
+        }
       }
 
       private com.google.protobuf.RepeatedFieldBuilderV3<
@@ -5925,8 +6112,8 @@ public final class PolarxSql {
       /**
        * <code>repeated .Polarx.Sql.GalaxyPrepareTableData tables = 4;</code>
        */
-      public java.util.List<? extends com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareTableDataOrBuilder> 
-           getTablesOrBuilderList() {
+      public java.util.List<? extends com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareTableDataOrBuilder>
+      getTablesOrBuilderList() {
         if (tablesBuilder_ != null) {
           return tablesBuilder_.getMessageOrBuilderList();
         } else {
@@ -5951,20 +6138,20 @@ public final class PolarxSql {
       /**
        * <code>repeated .Polarx.Sql.GalaxyPrepareTableData tables = 4;</code>
        */
-      public java.util.List<com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareTableData.Builder> 
-           getTablesBuilderList() {
+      public java.util.List<com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareTableData.Builder>
+      getTablesBuilderList() {
         return getTablesFieldBuilder().getBuilderList();
       }
       private com.google.protobuf.RepeatedFieldBuilderV3<
-          com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareTableData, com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareTableData.Builder, com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareTableDataOrBuilder> 
-          getTablesFieldBuilder() {
+          com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareTableData, com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareTableData.Builder, com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareTableDataOrBuilder>
+      getTablesFieldBuilder() {
         if (tablesBuilder_ == null) {
           tablesBuilder_ = new com.google.protobuf.RepeatedFieldBuilderV3<
               com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareTableData, com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareTableData.Builder, com.mysql.cj.polarx.protobuf.PolarxSql.GalaxyPrepareTableDataOrBuilder>(
-                  tables_,
-                  ((bitField0_ & 0x00000008) != 0),
-                  getParentForChildren(),
-                  isClean());
+              tables_,
+              ((bitField0_ & 0x00000008) != 0),
+              getParentForChildren(),
+              isClean());
           tables_ = null;
         }
         return tablesBuilder_;
@@ -6004,9 +6191,9 @@ public final class PolarxSql {
        */
       public Builder setParam(com.google.protobuf.ByteString value) {
         if (value == null) {
-    throw new NullPointerException();
-  }
-  bitField0_ |= 0x00000010;
+          throw new NullPointerException();
+        }
+        bitField0_ |= 0x00000010;
         param_ = value;
         onChanged();
         return this;
@@ -6159,10 +6346,10 @@ public final class PolarxSql {
        * @return The bytes for dbName.
        */
       public com.google.protobuf.ByteString
-          getDbNameBytes() {
+      getDbNameBytes() {
         java.lang.Object ref = dbName_;
         if (ref instanceof String) {
-          com.google.protobuf.ByteString b = 
+          com.google.protobuf.ByteString b =
               com.google.protobuf.ByteString.copyFromUtf8(
                   (java.lang.String) ref);
           dbName_ = b;
@@ -6183,9 +6370,9 @@ public final class PolarxSql {
       public Builder setDbName(
           java.lang.String value) {
         if (value == null) {
-    throw new NullPointerException();
-  }
-  bitField0_ |= 0x00000080;
+          throw new NullPointerException();
+        }
+        bitField0_ |= 0x00000080;
         dbName_ = value;
         onChanged();
         return this;
@@ -6216,21 +6403,21 @@ public final class PolarxSql {
       public Builder setDbNameBytes(
           com.google.protobuf.ByteString value) {
         if (value == null) {
-    throw new NullPointerException();
-  }
-  bitField0_ |= 0x00000080;
+          throw new NullPointerException();
+        }
+        bitField0_ |= 0x00000080;
         dbName_ = value;
         onChanged();
         return this;
       }
 
       private java.util.List<com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariable> sessionVariables_ =
-        java.util.Collections.emptyList();
+          java.util.Collections.emptyList();
       private void ensureSessionVariablesIsMutable() {
         if (!((bitField0_ & 0x00000100) != 0)) {
           sessionVariables_ = new java.util.ArrayList<com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariable>(sessionVariables_);
           bitField0_ |= 0x00000100;
-         }
+        }
       }
 
       private com.google.protobuf.RepeatedFieldBuilderV3<
@@ -6419,8 +6606,8 @@ public final class PolarxSql {
       /**
        * <code>repeated .Polarx.Datatypes.SessionVariable session_variables = 8;</code>
        */
-      public java.util.List<? extends com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariableOrBuilder> 
-           getSessionVariablesOrBuilderList() {
+      public java.util.List<? extends com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariableOrBuilder>
+      getSessionVariablesOrBuilderList() {
         if (sessionVariablesBuilder_ != null) {
           return sessionVariablesBuilder_.getMessageOrBuilderList();
         } else {
@@ -6445,20 +6632,20 @@ public final class PolarxSql {
       /**
        * <code>repeated .Polarx.Datatypes.SessionVariable session_variables = 8;</code>
        */
-      public java.util.List<com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariable.Builder> 
-           getSessionVariablesBuilderList() {
+      public java.util.List<com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariable.Builder>
+      getSessionVariablesBuilderList() {
         return getSessionVariablesFieldBuilder().getBuilderList();
       }
       private com.google.protobuf.RepeatedFieldBuilderV3<
-          com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariable, com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariable.Builder, com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariableOrBuilder> 
-          getSessionVariablesFieldBuilder() {
+          com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariable, com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariable.Builder, com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariableOrBuilder>
+      getSessionVariablesFieldBuilder() {
         if (sessionVariablesBuilder_ == null) {
           sessionVariablesBuilder_ = new com.google.protobuf.RepeatedFieldBuilderV3<
               com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariable, com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariable.Builder, com.mysql.cj.x.protobuf.PolarxDatatypes.SessionVariableOrBuilder>(
-                  sessionVariables_,
-                  ((bitField0_ & 0x00000100) != 0),
-                  getParentForChildren(),
-                  isClean());
+              sessionVariables_,
+              ((bitField0_ & 0x00000100) != 0),
+              getParentForChildren(),
+              isClean());
           sessionVariables_ = null;
         }
         return sessionVariablesBuilder_;
@@ -6495,10 +6682,10 @@ public final class PolarxSql {
        * @return The bytes for encoding.
        */
       public com.google.protobuf.ByteString
-          getEncodingBytes() {
+      getEncodingBytes() {
         java.lang.Object ref = encoding_;
         if (ref instanceof String) {
-          com.google.protobuf.ByteString b = 
+          com.google.protobuf.ByteString b =
               com.google.protobuf.ByteString.copyFromUtf8(
                   (java.lang.String) ref);
           encoding_ = b;
@@ -6515,9 +6702,9 @@ public final class PolarxSql {
       public Builder setEncoding(
           java.lang.String value) {
         if (value == null) {
-    throw new NullPointerException();
-  }
-  bitField0_ |= 0x00000200;
+          throw new NullPointerException();
+        }
+        bitField0_ |= 0x00000200;
         encoding_ = value;
         onChanged();
         return this;
@@ -6540,9 +6727,9 @@ public final class PolarxSql {
       public Builder setEncodingBytes(
           com.google.protobuf.ByteString value) {
         if (value == null) {
-    throw new NullPointerException();
-  }
-  bitField0_ |= 0x00000200;
+          throw new NullPointerException();
+        }
+        bitField0_ |= 0x00000200;
         encoding_ = value;
         onChanged();
         return this;
@@ -6880,6 +7067,43 @@ public final class PolarxSql {
         onChanged();
         return this;
       }
+
+      private boolean markDistributed_ ;
+      /**
+       * <code>optional bool mark_distributed = 19;</code>
+       * @return Whether the markDistributed field is set.
+       */
+      public boolean hasMarkDistributed() {
+        return ((bitField0_ & 0x00040000) != 0);
+      }
+      /**
+       * <code>optional bool mark_distributed = 19;</code>
+       * @return The markDistributed.
+       */
+      public boolean getMarkDistributed() {
+        return markDistributed_;
+      }
+      /**
+       * <code>optional bool mark_distributed = 19;</code>
+       * @param value The markDistributed to set.
+       * @return This builder for chaining.
+       */
+      public Builder setMarkDistributed(boolean value) {
+        bitField0_ |= 0x00040000;
+        markDistributed_ = value;
+        onChanged();
+        return this;
+      }
+      /**
+       * <code>optional bool mark_distributed = 19;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearMarkDistributed() {
+        bitField0_ = (bitField0_ & ~0x00040000);
+        markDistributed_ = false;
+        onChanged();
+        return this;
+      }
       @java.lang.Override
       public final Builder setUnknownFields(
           final com.google.protobuf.UnknownFieldSet unknownFields) {
@@ -6948,7 +7172,7 @@ public final class PolarxSql {
       com.google.protobuf.GeneratedMessageV3 implements
       // @@protoc_insertion_point(message_implements:Polarx.Sql.StmtExecuteOk)
       StmtExecuteOkOrBuilder {
-  private static final long serialVersionUID = 0L;
+    private static final long serialVersionUID = 0L;
     // Use StmtExecuteOk.newBuilder() to construct.
     private StmtExecuteOk(com.google.protobuf.GeneratedMessageV3.Builder<?> builder) {
       super(builder);
@@ -6983,16 +7207,16 @@ public final class PolarxSql {
         while (!done) {
           int tag = input.readTag();
           switch (tag) {
-            case 0:
+          case 0:
+            done = true;
+            break;
+          default: {
+            if (!parseUnknownField(
+                input, unknownFields, extensionRegistry, tag)) {
               done = true;
-              break;
-            default: {
-              if (!parseUnknownField(
-                  input, unknownFields, extensionRegistry, tag)) {
-                done = true;
-              }
-              break;
             }
+            break;
+          }
           }
         }
       } catch (com.google.protobuf.InvalidProtocolBufferException e) {
@@ -7006,13 +7230,13 @@ public final class PolarxSql {
       }
     }
     public static final com.google.protobuf.Descriptors.Descriptor
-        getDescriptor() {
+    getDescriptor() {
       return com.mysql.cj.polarx.protobuf.PolarxSql.internal_static_Polarx_Sql_StmtExecuteOk_descriptor;
     }
 
     @java.lang.Override
     protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
-        internalGetFieldAccessorTable() {
+    internalGetFieldAccessorTable() {
       return com.mysql.cj.polarx.protobuf.PolarxSql.internal_static_Polarx_Sql_StmtExecuteOk_fieldAccessorTable
           .ensureFieldAccessorsInitialized(
               com.mysql.cj.polarx.protobuf.PolarxSql.StmtExecuteOk.class, com.mysql.cj.polarx.protobuf.PolarxSql.StmtExecuteOk.Builder.class);
@@ -7031,7 +7255,7 @@ public final class PolarxSql {
 
     @java.lang.Override
     public void writeTo(com.google.protobuf.CodedOutputStream output)
-                        throws java.io.IOException {
+        throws java.io.IOException {
       unknownFields.writeTo(output);
     }
 
@@ -7049,7 +7273,7 @@ public final class PolarxSql {
     @java.lang.Override
     public boolean equals(final java.lang.Object obj) {
       if (obj == this) {
-       return true;
+        return true;
       }
       if (!(obj instanceof com.mysql.cj.polarx.protobuf.PolarxSql.StmtExecuteOk)) {
         return super.equals(obj);
@@ -7174,13 +7398,13 @@ public final class PolarxSql {
         // @@protoc_insertion_point(builder_implements:Polarx.Sql.StmtExecuteOk)
         com.mysql.cj.polarx.protobuf.PolarxSql.StmtExecuteOkOrBuilder {
       public static final com.google.protobuf.Descriptors.Descriptor
-          getDescriptor() {
+      getDescriptor() {
         return com.mysql.cj.polarx.protobuf.PolarxSql.internal_static_Polarx_Sql_StmtExecuteOk_descriptor;
       }
 
       @java.lang.Override
       protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
-          internalGetFieldAccessorTable() {
+      internalGetFieldAccessorTable() {
         return com.mysql.cj.polarx.protobuf.PolarxSql.internal_static_Polarx_Sql_StmtExecuteOk_fieldAccessorTable
             .ensureFieldAccessorsInitialized(
                 com.mysql.cj.polarx.protobuf.PolarxSql.StmtExecuteOk.class, com.mysql.cj.polarx.protobuf.PolarxSql.StmtExecuteOk.Builder.class);
@@ -7198,7 +7422,7 @@ public final class PolarxSql {
       }
       private void maybeForceBuilderInitialization() {
         if (com.google.protobuf.GeneratedMessageV3
-                .alwaysUseFieldBuilders) {
+            .alwaysUseFieldBuilders) {
         }
       }
       @java.lang.Override
@@ -7209,7 +7433,7 @@ public final class PolarxSql {
 
       @java.lang.Override
       public com.google.protobuf.Descriptors.Descriptor
-          getDescriptorForType() {
+      getDescriptorForType() {
         return com.mysql.cj.polarx.protobuf.PolarxSql.internal_static_Polarx_Sql_StmtExecuteOk_descriptor;
       }
 
@@ -7381,7 +7605,7 @@ public final class PolarxSql {
       com.google.protobuf.GeneratedMessageV3 implements
       // @@protoc_insertion_point(message_implements:Polarx.Sql.TokenOffer)
       TokenOfferOrBuilder {
-  private static final long serialVersionUID = 0L;
+    private static final long serialVersionUID = 0L;
     // Use TokenOffer.newBuilder() to construct.
     private TokenOffer(com.google.protobuf.GeneratedMessageV3.Builder<?> builder) {
       super(builder);
@@ -7418,21 +7642,21 @@ public final class PolarxSql {
         while (!done) {
           int tag = input.readTag();
           switch (tag) {
-            case 0:
+          case 0:
+            done = true;
+            break;
+          case 8: {
+            bitField0_ |= 0x00000001;
+            token_ = input.readInt32();
+            break;
+          }
+          default: {
+            if (!parseUnknownField(
+                input, unknownFields, extensionRegistry, tag)) {
               done = true;
-              break;
-            case 8: {
-              bitField0_ |= 0x00000001;
-              token_ = input.readInt32();
-              break;
             }
-            default: {
-              if (!parseUnknownField(
-                  input, unknownFields, extensionRegistry, tag)) {
-                done = true;
-              }
-              break;
-            }
+            break;
+          }
           }
         }
       } catch (com.google.protobuf.InvalidProtocolBufferException e) {
@@ -7446,13 +7670,13 @@ public final class PolarxSql {
       }
     }
     public static final com.google.protobuf.Descriptors.Descriptor
-        getDescriptor() {
+    getDescriptor() {
       return com.mysql.cj.polarx.protobuf.PolarxSql.internal_static_Polarx_Sql_TokenOffer_descriptor;
     }
 
     @java.lang.Override
     protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
-        internalGetFieldAccessorTable() {
+    internalGetFieldAccessorTable() {
       return com.mysql.cj.polarx.protobuf.PolarxSql.internal_static_Polarx_Sql_TokenOffer_fieldAccessorTable
           .ensureFieldAccessorsInitialized(
               com.mysql.cj.polarx.protobuf.PolarxSql.TokenOffer.class, com.mysql.cj.polarx.protobuf.PolarxSql.TokenOffer.Builder.class);
@@ -7489,7 +7713,7 @@ public final class PolarxSql {
 
     @java.lang.Override
     public void writeTo(com.google.protobuf.CodedOutputStream output)
-                        throws java.io.IOException {
+        throws java.io.IOException {
       if (((bitField0_ & 0x00000001) != 0)) {
         output.writeInt32(1, token_);
       }
@@ -7504,7 +7728,7 @@ public final class PolarxSql {
       size = 0;
       if (((bitField0_ & 0x00000001) != 0)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeInt32Size(1, token_);
+            .computeInt32Size(1, token_);
       }
       size += unknownFields.getSerializedSize();
       memoizedSize = size;
@@ -7514,7 +7738,7 @@ public final class PolarxSql {
     @java.lang.Override
     public boolean equals(final java.lang.Object obj) {
       if (obj == this) {
-       return true;
+        return true;
       }
       if (!(obj instanceof com.mysql.cj.polarx.protobuf.PolarxSql.TokenOffer)) {
         return super.equals(obj);
@@ -7644,13 +7868,13 @@ public final class PolarxSql {
         // @@protoc_insertion_point(builder_implements:Polarx.Sql.TokenOffer)
         com.mysql.cj.polarx.protobuf.PolarxSql.TokenOfferOrBuilder {
       public static final com.google.protobuf.Descriptors.Descriptor
-          getDescriptor() {
+      getDescriptor() {
         return com.mysql.cj.polarx.protobuf.PolarxSql.internal_static_Polarx_Sql_TokenOffer_descriptor;
       }
 
       @java.lang.Override
       protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
-          internalGetFieldAccessorTable() {
+      internalGetFieldAccessorTable() {
         return com.mysql.cj.polarx.protobuf.PolarxSql.internal_static_Polarx_Sql_TokenOffer_fieldAccessorTable
             .ensureFieldAccessorsInitialized(
                 com.mysql.cj.polarx.protobuf.PolarxSql.TokenOffer.class, com.mysql.cj.polarx.protobuf.PolarxSql.TokenOffer.Builder.class);
@@ -7668,7 +7892,7 @@ public final class PolarxSql {
       }
       private void maybeForceBuilderInitialization() {
         if (com.google.protobuf.GeneratedMessageV3
-                .alwaysUseFieldBuilders) {
+            .alwaysUseFieldBuilders) {
         }
       }
       @java.lang.Override
@@ -7681,7 +7905,7 @@ public final class PolarxSql {
 
       @java.lang.Override
       public com.google.protobuf.Descriptors.Descriptor
-          getDescriptorForType() {
+      getDescriptorForType() {
         return com.mysql.cj.polarx.protobuf.PolarxSql.internal_static_Polarx_Sql_TokenOffer_descriptor;
       }
 
@@ -7880,104 +8104,105 @@ public final class PolarxSql {
   }
 
   private static final com.google.protobuf.Descriptors.Descriptor
-    internal_static_Polarx_Sql_StmtExecute_descriptor;
-  private static final 
-    com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
+      internal_static_Polarx_Sql_StmtExecute_descriptor;
+  private static final
+  com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
       internal_static_Polarx_Sql_StmtExecute_fieldAccessorTable;
   private static final com.google.protobuf.Descriptors.Descriptor
-    internal_static_Polarx_Sql_GalaxyPrepareTableData_descriptor;
-  private static final 
-    com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
+      internal_static_Polarx_Sql_GalaxyPrepareTableData_descriptor;
+  private static final
+  com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
       internal_static_Polarx_Sql_GalaxyPrepareTableData_fieldAccessorTable;
   private static final com.google.protobuf.Descriptors.Descriptor
-    internal_static_Polarx_Sql_GalaxyPrepareExecute_descriptor;
-  private static final 
-    com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
+      internal_static_Polarx_Sql_GalaxyPrepareExecute_descriptor;
+  private static final
+  com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
       internal_static_Polarx_Sql_GalaxyPrepareExecute_fieldAccessorTable;
   private static final com.google.protobuf.Descriptors.Descriptor
-    internal_static_Polarx_Sql_StmtExecuteOk_descriptor;
-  private static final 
-    com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
+      internal_static_Polarx_Sql_StmtExecuteOk_descriptor;
+  private static final
+  com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
       internal_static_Polarx_Sql_StmtExecuteOk_fieldAccessorTable;
   private static final com.google.protobuf.Descriptors.Descriptor
-    internal_static_Polarx_Sql_TokenOffer_descriptor;
-  private static final 
-    com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
+      internal_static_Polarx_Sql_TokenOffer_descriptor;
+  private static final
+  com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
       internal_static_Polarx_Sql_TokenOffer_fieldAccessorTable;
 
   public static com.google.protobuf.Descriptors.FileDescriptor
-      getDescriptor() {
+  getDescriptor() {
     return descriptor;
   }
   private static  com.google.protobuf.Descriptors.FileDescriptor
       descriptor;
   static {
     java.lang.String[] descriptorData = {
-      "\n\020polarx_sql.proto\022\nPolarx.Sql\032\026polarx_d" +
-      "atatypes.proto\"\271\003\n\013StmtExecute\022\026\n\tnamesp" +
-      "ace\030\003 \001(\t:\003sql\022\014\n\004stmt\030\001 \001(\014\022\023\n\013stmt_dig" +
-      "est\030\014 \001(\014\022\014\n\004hint\030\r \001(\014\022\033\n\014chunk_result\030" +
-      "\016 \001(\010:\005false\022\030\n\tfeed_back\030\020 \001(\010:\005false\022#" +
-      "\n\004args\030\002 \003(\0132\025.Polarx.Datatypes.Any\022\037\n\020c" +
-      "ompact_metadata\030\004 \001(\010:\005false\022\023\n\013schema_n" +
-      "ame\030\005 \001(\t\022<\n\021session_variables\030\006 \003(\0132!.P" +
-      "olarx.Datatypes.SessionVariable\022\020\n\010encod" +
-      "ing\030\007 \001(\t\022\r\n\005token\030\010 \001(\005\022\023\n\013reset_error\030" +
-      "\t \001(\010\022\024\n\014snapshot_seq\030\n \001(\004\022\022\n\ncommit_se" +
-      "q\030\013 \001(\004\022\033\n\023use_cts_transaction\030\017 \001(\010\022\024\n\014" +
-      "capabilities\030\021 \001(\004\"R\n\026GalaxyPrepareTable" +
-      "Data\022\023\n\013table_index\030\001 \002(\005\022\017\n\007db_name\030\002 \001" +
-      "(\014\022\022\n\ntable_name\030\003 \002(\014\"\260\004\n\024GalaxyPrepare" +
-      "Execute\022\014\n\004stmt\030\001 \001(\014\022\023\n\013stmt_digest\030\002 \001" +
-      "(\014\022\014\n\004hint\030\003 \001(\014\0222\n\006tables\030\004 \003(\0132\".Polar" +
-      "x.Sql.GalaxyPrepareTableData\022\r\n\005param\030\005 " +
-      "\001(\014\022\021\n\tparam_num\030\021 \001(\005\022\037\n\020compact_metada" +
-      "ta\030\006 \001(\010:\005false\022\017\n\007db_name\030\007 \001(\t\022<\n\021sess" +
-      "ion_variables\030\010 \003(\0132!.Polarx.Datatypes.S" +
-      "essionVariable\022\020\n\010encoding\030\t \001(\t\022\r\n\005toke" +
-      "n\030\n \001(\005\022\023\n\013reset_error\030\013 \001(\010\022\024\n\014snapshot" +
-      "_seq\030\014 \001(\004\022\022\n\ncommit_seq\030\r \001(\004\022\033\n\023use_ct" +
-      "s_transaction\030\016 \001(\010\022L\n\017result_set_type\030\017" +
-      " \001(\0162..Polarx.Sql.GalaxyPrepareExecute.R" +
-      "esultSetType:\003ROW\022\030\n\tfeed_back\030\020 \001(\010:\005fa" +
-      "lse\022\024\n\014capabilities\030\022 \001(\004\"&\n\rResultSetTy" +
-      "pe\022\007\n\003ROW\020\001\022\014\n\010CHUNK_V1\020\002\"\017\n\rStmtExecute" +
-      "Ok\"\037\n\nTokenOffer\022\021\n\005token\030\001 \001(\005:\002-1B\036\n\034c" +
-      "om.mysql.cj.polarx.protobuf"
+        "\n\020polarx_sql.proto\022\nPolarx.Sql\032\026polarx_d" +
+            "atatypes.proto\"\323\003\n\013StmtExecute\022\026\n\tnamesp" +
+            "ace\030\003 \001(\t:\003sql\022\014\n\004stmt\030\001 \001(\014\022\023\n\013stmt_dig" +
+            "est\030\014 \001(\014\022\014\n\004hint\030\r \001(\014\022\033\n\014chunk_result\030" +
+            "\016 \001(\010:\005false\022\030\n\tfeed_back\030\020 \001(\010:\005false\022#" +
+            "\n\004args\030\002 \003(\0132\025.Polarx.Datatypes.Any\022\037\n\020c" +
+            "ompact_metadata\030\004 \001(\010:\005false\022\023\n\013schema_n" +
+            "ame\030\005 \001(\t\022<\n\021session_variables\030\006 \003(\0132!.P" +
+            "olarx.Datatypes.SessionVariable\022\020\n\010encod" +
+            "ing\030\007 \001(\t\022\r\n\005token\030\010 \001(\005\022\023\n\013reset_error\030" +
+            "\t \001(\010\022\024\n\014snapshot_seq\030\n \001(\004\022\022\n\ncommit_se" +
+            "q\030\013 \001(\004\022\033\n\023use_cts_transaction\030\017 \001(\010\022\024\n\014" +
+            "capabilities\030\021 \001(\004\022\030\n\020mark_distributed\030\022" +
+            " \001(\010\"R\n\026GalaxyPrepareTableData\022\023\n\013table_" +
+            "index\030\001 \002(\005\022\017\n\007db_name\030\002 \001(\014\022\022\n\ntable_na" +
+            "me\030\003 \002(\014\"\312\004\n\024GalaxyPrepareExecute\022\014\n\004stm" +
+            "t\030\001 \001(\014\022\023\n\013stmt_digest\030\002 \001(\014\022\014\n\004hint\030\003 \001" +
+            "(\014\0222\n\006tables\030\004 \003(\0132\".Polarx.Sql.GalaxyPr" +
+            "epareTableData\022\r\n\005param\030\005 \001(\014\022\021\n\tparam_n" +
+            "um\030\021 \001(\005\022\037\n\020compact_metadata\030\006 \001(\010:\005fals" +
+            "e\022\017\n\007db_name\030\007 \001(\t\022<\n\021session_variables\030" +
+            "\010 \003(\0132!.Polarx.Datatypes.SessionVariable" +
+            "\022\020\n\010encoding\030\t \001(\t\022\r\n\005token\030\n \001(\005\022\023\n\013res" +
+            "et_error\030\013 \001(\010\022\024\n\014snapshot_seq\030\014 \001(\004\022\022\n\n" +
+            "commit_seq\030\r \001(\004\022\033\n\023use_cts_transaction\030" +
+            "\016 \001(\010\022L\n\017result_set_type\030\017 \001(\0162..Polarx." +
+            "Sql.GalaxyPrepareExecute.ResultSetType:\003" +
+            "ROW\022\030\n\tfeed_back\030\020 \001(\010:\005false\022\024\n\014capabil" +
+            "ities\030\022 \001(\004\022\030\n\020mark_distributed\030\023 \001(\010\"&\n" +
+            "\rResultSetType\022\007\n\003ROW\020\001\022\014\n\010CHUNK_V1\020\002\"\017\n" +
+            "\rStmtExecuteOk\"\037\n\nTokenOffer\022\021\n\005token\030\001 " +
+            "\001(\005:\002-1B\036\n\034com.mysql.cj.polarx.protobuf"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
-      .internalBuildGeneratedFileFrom(descriptorData,
-        new com.google.protobuf.Descriptors.FileDescriptor[] {
-          com.mysql.cj.x.protobuf.PolarxDatatypes.getDescriptor(),
-        });
+        .internalBuildGeneratedFileFrom(descriptorData,
+            new com.google.protobuf.Descriptors.FileDescriptor[] {
+                com.mysql.cj.x.protobuf.PolarxDatatypes.getDescriptor(),
+            });
     internal_static_Polarx_Sql_StmtExecute_descriptor =
-      getDescriptor().getMessageTypes().get(0);
+        getDescriptor().getMessageTypes().get(0);
     internal_static_Polarx_Sql_StmtExecute_fieldAccessorTable = new
-      com.google.protobuf.GeneratedMessageV3.FieldAccessorTable(
+        com.google.protobuf.GeneratedMessageV3.FieldAccessorTable(
         internal_static_Polarx_Sql_StmtExecute_descriptor,
-        new java.lang.String[] { "Namespace", "Stmt", "StmtDigest", "Hint", "ChunkResult", "FeedBack", "Args", "CompactMetadata", "SchemaName", "SessionVariables", "Encoding", "Token", "ResetError", "SnapshotSeq", "CommitSeq", "UseCtsTransaction", "Capabilities", });
+        new java.lang.String[] { "Namespace", "Stmt", "StmtDigest", "Hint", "ChunkResult", "FeedBack", "Args", "CompactMetadata", "SchemaName", "SessionVariables", "Encoding", "Token", "ResetError", "SnapshotSeq", "CommitSeq", "UseCtsTransaction", "Capabilities", "MarkDistributed", });
     internal_static_Polarx_Sql_GalaxyPrepareTableData_descriptor =
-      getDescriptor().getMessageTypes().get(1);
+        getDescriptor().getMessageTypes().get(1);
     internal_static_Polarx_Sql_GalaxyPrepareTableData_fieldAccessorTable = new
-      com.google.protobuf.GeneratedMessageV3.FieldAccessorTable(
+        com.google.protobuf.GeneratedMessageV3.FieldAccessorTable(
         internal_static_Polarx_Sql_GalaxyPrepareTableData_descriptor,
         new java.lang.String[] { "TableIndex", "DbName", "TableName", });
     internal_static_Polarx_Sql_GalaxyPrepareExecute_descriptor =
-      getDescriptor().getMessageTypes().get(2);
+        getDescriptor().getMessageTypes().get(2);
     internal_static_Polarx_Sql_GalaxyPrepareExecute_fieldAccessorTable = new
-      com.google.protobuf.GeneratedMessageV3.FieldAccessorTable(
+        com.google.protobuf.GeneratedMessageV3.FieldAccessorTable(
         internal_static_Polarx_Sql_GalaxyPrepareExecute_descriptor,
-        new java.lang.String[] { "Stmt", "StmtDigest", "Hint", "Tables", "Param", "ParamNum", "CompactMetadata", "DbName", "SessionVariables", "Encoding", "Token", "ResetError", "SnapshotSeq", "CommitSeq", "UseCtsTransaction", "ResultSetType", "FeedBack", "Capabilities", });
+        new java.lang.String[] { "Stmt", "StmtDigest", "Hint", "Tables", "Param", "ParamNum", "CompactMetadata", "DbName", "SessionVariables", "Encoding", "Token", "ResetError", "SnapshotSeq", "CommitSeq", "UseCtsTransaction", "ResultSetType", "FeedBack", "Capabilities", "MarkDistributed", });
     internal_static_Polarx_Sql_StmtExecuteOk_descriptor =
-      getDescriptor().getMessageTypes().get(3);
+        getDescriptor().getMessageTypes().get(3);
     internal_static_Polarx_Sql_StmtExecuteOk_fieldAccessorTable = new
-      com.google.protobuf.GeneratedMessageV3.FieldAccessorTable(
+        com.google.protobuf.GeneratedMessageV3.FieldAccessorTable(
         internal_static_Polarx_Sql_StmtExecuteOk_descriptor,
         new java.lang.String[] { });
     internal_static_Polarx_Sql_TokenOffer_descriptor =
-      getDescriptor().getMessageTypes().get(4);
+        getDescriptor().getMessageTypes().get(4);
     internal_static_Polarx_Sql_TokenOffer_fieldAccessorTable = new
-      com.google.protobuf.GeneratedMessageV3.FieldAccessorTable(
+        com.google.protobuf.GeneratedMessageV3.FieldAccessorTable(
         internal_static_Polarx_Sql_TokenOffer_descriptor,
         new java.lang.String[] { "Token", });
     com.mysql.cj.x.protobuf.PolarxDatatypes.getDescriptor();
