@@ -1542,12 +1542,12 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
 
     public XResult execQuery(XConnection connection, BytesSql sql, byte[] hint, List<PolarxDatatypes.Any> args,
                              boolean ignoreResult, ByteString digest) throws SQLException {
-        return execQuery(connection, sql, hint, args, ignoreResult, digest, null);
+        return execQuery(connection, sql, hint, args, ignoreResult, digest, null, false);
     }
 
     public synchronized XResult execQuery(XConnection connection, BytesSql sql, byte[] hint,
                                           List<PolarxDatatypes.Any> args,
-                                          boolean ignoreResult, ByteString digest, String returning)
+                                          boolean ignoreResult, ByteString digest, String returning, boolean backfill)
         throws SQLException {
         if (returning != null && XConfig.GALAXY_X_PROTOCOL) {
             throw new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_SESSION, "Returning not supported in galaxy.");
@@ -1564,7 +1564,8 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
         // Send request.
         final PolarxSql.StmtExecute.Builder builder = PolarxSql.StmtExecute.newBuilder();
 
-        final String returningHint = null != returning ? "/* +returning fields(" + returning + ") */ " : "";
+        final String returningFunc = backfill ? "backfill" : "returning";
+        final String returningHint = null != returning ? "/* +" + returningFunc + " fields(" + returning + ") */ " : "";
         boolean setStmt = true;
         // Dealing cache.
         if (!ignoreResult && !noCache && digest != null && supportPlanCache()) {

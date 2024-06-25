@@ -21,6 +21,7 @@ import com.alibaba.polardbx.common.jdbc.TableName;
 import com.alibaba.polardbx.common.utils.GeneralUtil;
 import com.alibaba.polardbx.rpc.client.XSession;
 import com.alibaba.polardbx.common.datatype.UInt64;
+import com.alibaba.polardbx.common.jdbc.TableName;
 import com.alibaba.polardbx.common.utils.GeneralUtil;
 import com.alibaba.polardbx.rpc.client.XSession;
 import com.google.protobuf.ByteString;

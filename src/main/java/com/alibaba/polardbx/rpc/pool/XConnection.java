@@ -458,23 +458,25 @@ public class XConnection implements AutoCloseable, Connection {
         }
     }
 
-    public XResult execUpdateReturning(String sql, byte[] hint, List<PolarxDatatypes.Any> args, String returning)
+    public XResult execUpdateReturning(String sql, byte[] hint, List<PolarxDatatypes.Any> args, String returning,
+                                       boolean backfill)
         throws SQLException {
         sessionLock.readLock().lock();
         try {
             check();
-            return session.execQuery(this, BytesSql.getBytesSql(sql), hint, args, false, null, returning);
+            return session.execQuery(this, BytesSql.getBytesSql(sql), hint, args, false, null, returning, backfill);
         } finally {
             sessionLock.readLock().unlock();
         }
     }
 
-    public XResult execUpdateReturning(BytesSql sql, byte[] hint, List<PolarxDatatypes.Any> args, String returning)
+    public XResult execUpdateReturning(BytesSql sql, byte[] hint, List<PolarxDatatypes.Any> args, String returning,
+                                       boolean backfill)
         throws SQLException {
         sessionLock.readLock().lock();
         try {
             check();
-            return session.execQuery(this, sql, hint, args, false, null, returning);
+            return session.execQuery(this, sql, hint, args, false, null, returning, backfill);
         } finally {
             sessionLock.readLock().unlock();
         }

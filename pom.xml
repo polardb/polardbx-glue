@@ -4,18 +4,12 @@
     <parent>
         <groupId>com.alibaba.polardbx</groupId>
         <artifactId>polardbx</artifactId>
-        <version>5.4.19</version>
+        <version>${revision}</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
     <artifactId>polardbx-rpc</artifactId>
     <packaging>jar</packaging>
     <name>${project.artifactId} module for polardbx ${project.version}</name>
-
-    <properties>
-        <!-- Version -->
-        <polardbx.version>5.4.19</polardbx.version>
-        <revision>${polardbx.version}-SNAPSHOT</revision>
-    </properties>
 
     <dependencies>
         <dependency>

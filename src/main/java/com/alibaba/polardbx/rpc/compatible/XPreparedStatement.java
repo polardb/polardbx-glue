@@ -302,13 +302,13 @@ public class XPreparedStatement extends XStatement implements PreparedStatement 
         }
     }
 
-    public XResult executeUpdateReturningX(String returning) throws SQLException {
+    public XResult executeUpdateReturningX(String returning, boolean backfill) throws SQLException {
         if (useGalaxyPrepare) {
             throw new NotSupportException();
         }
         // execute INSERT/UPDATE/DELETE then return rows affected
         final Pair<BytesSql, List<PolarxDatatypes.Any>> newParam = reorganizeParam();
-        return connection.execUpdateReturning(newParam.getKey(), hint, newParam.getValue(), returning);
+        return connection.execUpdateReturning(newParam.getKey(), hint, newParam.getValue(), returning, backfill);
     }
 
     /**
