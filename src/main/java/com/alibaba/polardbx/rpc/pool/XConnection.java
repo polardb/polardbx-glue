@@ -29,8 +29,8 @@ import com.alibaba.polardbx.rpc.compatible.XPreparedStatement;
 import com.alibaba.polardbx.rpc.compatible.XStatement;
 import com.alibaba.polardbx.rpc.result.XResult;
 import com.google.protobuf.ByteString;
-import com.mysql.cj.polarx.protobuf.PolarxPhysicalBackfill;
 import com.mysql.cj.polarx.protobuf.PolarxNotice;
+import com.mysql.cj.polarx.protobuf.PolarxPhysicalBackfill;
 import com.mysql.cj.x.protobuf.PolarxDatatypes;
 import com.mysql.cj.x.protobuf.PolarxExecPlan;
 
@@ -284,6 +284,16 @@ public class XConnection implements AutoCloseable, Connection {
     public void setLazyMarkDistributed() throws SQLException {
         check();
         session.setLazyMarkDistributed();
+    }
+
+    public void setLazyFlashbackArea() throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            session.setLazyFlashbackArea();
+        } finally {
+            sessionLock.readLock().unlock();
+        }
     }
 
     public void setLazySnapshotSeq(long lazySnapshotSeq) throws SQLException {
@@ -547,6 +557,16 @@ public class XConnection implements AutoCloseable, Connection {
         try {
             check();
             return session.supportMarkDistributed();
+        } finally {
+            sessionLock.readLock().unlock();
+        }
+    }
+
+    public boolean supportFlashbackArea() throws SQLException {
+        sessionLock.readLock().lock();
+        try {
+            check();
+            return session.supportFlashbackArea();
         } finally {
             sessionLock.readLock().unlock();
         }

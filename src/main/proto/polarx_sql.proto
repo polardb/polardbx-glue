@@ -71,6 +71,9 @@ message StmtExecute {
 
   // innodb_mark_distributed
   optional bool mark_distributed = 18;
+
+  // Flashback area
+  optional bool query_via_flashback_area = 19;
 }
 
 message GalaxyPrepareTableData {

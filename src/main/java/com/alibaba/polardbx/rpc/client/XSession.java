@@ -16,6 +16,7 @@
 
 package com.alibaba.polardbx.rpc.client;
 
+import com.alibaba.polardbx.common.constants.IsolationLevel;
 import com.alibaba.polardbx.common.constants.ServerVariables;
 import com.alibaba.polardbx.common.exception.TddlRuntimeException;
 import com.alibaba.polardbx.common.exception.code.ErrorCode;
@@ -133,6 +134,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
     private boolean lazyMarkDistributed = false;
     private long lazySnapshotSeq = -1L;
     private long lazyCommitSeq = -1L;
+    private boolean lazyFlashbackArea = false;
 
     // Cache control.
     private boolean noCache = false;
@@ -498,6 +500,10 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             historySql.add("msg_mark_distributed=ON");
             sessionSql.add("msg_mark_distributed=ON");
         }
+        if (lazyFlashbackArea) {
+            historySql.add("msg_flashback_area");
+            sessionSql.add("msg_flashback_area");
+        }
     }
 
     public static String toJavaEncoding(String encoding) {
@@ -594,27 +600,12 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                 if (null == isolationString) {
                     isolation = Connection.TRANSACTION_READ_COMMITTED;
                 } else {
-                    switch (isolationString.toUpperCase()) {
-                    case "READ-UNCOMMITTED":
-                        isolation = Connection.TRANSACTION_READ_UNCOMMITTED;
-                        break;
-
-                    case "READ-COMMITTED":
-                        isolation = Connection.TRANSACTION_READ_COMMITTED;
-                        break;
-
-                    case "REPEATABLE-READ":
-                        isolation = Connection.TRANSACTION_REPEATABLE_READ;
-                        break;
-
-                    case "SERIALIZABLE":
-                        isolation = Connection.TRANSACTION_SERIALIZABLE;
-                        break;
-
-                    default:
+                    final IsolationLevel level = IsolationLevel.parse(isolationString);
+                    if (null == level) {
                         throw new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_CLIENT,
                             this + " unknown isolation level: " + isolationString);
                     }
+                    isolation = level.getCode();
                 }
             }
         }
@@ -1016,6 +1007,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             lazyCommitSeq = -1L;
             lazyMarkDistributed = false;
             lazyUseCtsTransaction = false;
+            lazyFlashbackArea = false;
             noCache = false;
             forceCache = false;
             chunkResult = false;
@@ -1230,6 +1222,10 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
         this.lazyMarkDistributed = true;
     }
 
+    public void setLazyFlashbackArea() {
+        this.lazyFlashbackArea = true;
+    }
+
     public void setLazySnapshotSeq(long lazySnapshotSeq) {
         this.lazySnapshotSeq = lazySnapshotSeq;
     }
@@ -1242,6 +1238,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
     private boolean isStashed = false;
     private boolean stashUseCtsTransaction = false;
     private boolean stashMarkDistributed = false;
+    private boolean stashFlashbackArea = false;
     private long stashSnapshotSeq = -1L;
     private long stashCommitSeq = -1L;
 
@@ -1252,10 +1249,12 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
         isStashed = true;
         stashUseCtsTransaction = lazyUseCtsTransaction;
         stashMarkDistributed = lazyMarkDistributed;
+        stashFlashbackArea = lazyFlashbackArea;
         stashSnapshotSeq = lazySnapshotSeq;
         stashCommitSeq = lazyCommitSeq;
         lazyUseCtsTransaction = false;
         lazyMarkDistributed = false;
+        lazyFlashbackArea = false;
         lazySnapshotSeq = -1;
         lazyCommitSeq = -1;
         return true;
@@ -1265,6 +1264,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
         isStashed = false;
         lazyUseCtsTransaction = stashUseCtsTransaction;
         lazyMarkDistributed = stashMarkDistributed;
+        lazyFlashbackArea = stashFlashbackArea;
         lazySnapshotSeq = stashSnapshotSeq;
         lazyCommitSeq = stashCommitSeq;
     }
@@ -1427,6 +1427,15 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                 extra += "mark_distributed;";
             }
             lazyMarkDistributed = false;
+        }
+        if (lazyFlashbackArea) {
+            execPlan.setQueryViaFlashbackArea(true);
+            if (null == extra) {
+                extra = "flashback_area;";
+            } else {
+                extra += "flashback_area;";
+            }
+            lazyFlashbackArea = false;
         }
         if (lazySnapshotSeq != -1) {
             execPlan.setSnapshotSeq(lazySnapshotSeq);
@@ -1937,7 +1946,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
         return result;
     }
 
-    private String setLazyTrxVariables(PolarxSql.StmtExecute.Builder builder, String extra) {
+    protected String setLazyTrxVariables(PolarxSql.StmtExecute.Builder builder, String extra) {
         if (lazyUseCtsTransaction) {
             builder.setUseCtsTransaction(true);
             if (null == extra) {
@@ -1955,6 +1964,15 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                 extra += "mark_distributed;";
             }
             lazyMarkDistributed = false;
+        }
+        if (lazyFlashbackArea) {
+            builder.setQueryViaFlashbackArea(true);
+            if (null == extra) {
+                extra = "flashback_area;";
+            } else {
+                extra += "flashback_area;";
+            }
+            lazyFlashbackArea = false;
         }
         if (lazySnapshotSeq != -1) {
             builder.setSnapshotSeq(lazySnapshotSeq);
@@ -2164,6 +2182,8 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
     private Boolean flagRawString = null;
     private Boolean flagXRPC = null;
     private Boolean flagMarkDistributed = null;
+
+    private Boolean flagFlashbackArea = null;
 
     public boolean supportMessageTimestamp() {
         // disabled in XConnectionManager when galaxy protocol
@@ -2754,6 +2774,22 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             return flagMarkDistributed = true;
         }
         return flagMarkDistributed = false;
+    }
+
+    public boolean supportFlashbackArea() {
+        if (flagFlashbackArea != null) {
+            return flagFlashbackArea;
+        }
+
+        if (!client.isActive()) {
+            return false; // Initializing.
+        }
+
+        final Object markFlashbackArea = client.getSessionVariablesL().get("opt_flashback_area");
+        if (null != markFlashbackArea) {
+            return flagFlashbackArea = true;
+        }
+        return flagFlashbackArea = false;
     }
 
     /**

@@ -303,6 +303,25 @@ public final class PolarxSql {
      * @return The markDistributed.
      */
     boolean getMarkDistributed();
+
+    /**
+     * <pre>
+     * Flashback area
+     * </pre>
+     *
+     * <code>optional bool query_via_flashback_area = 19;</code>
+     * @return Whether the queryViaFlashbackArea field is set.
+     */
+    boolean hasQueryViaFlashbackArea();
+    /**
+     * <pre>
+     * Flashback area
+     * </pre>
+     *
+     * <code>optional bool query_via_flashback_area = 19;</code>
+     * @return The queryViaFlashbackArea.
+     */
+    boolean getQueryViaFlashbackArea();
   }
   /**
    * <pre>
@@ -474,6 +493,11 @@ public final class PolarxSql {
           case 144: {
             bitField0_ |= 0x00008000;
             markDistributed_ = input.readBool();
+            break;
+          }
+          case 152: {
+            bitField0_ |= 0x00010000;
+            queryViaFlashbackArea_ = input.readBool();
             break;
           }
           default: {
@@ -969,6 +993,31 @@ public final class PolarxSql {
       return markDistributed_;
     }
 
+    public static final int QUERY_VIA_FLASHBACK_AREA_FIELD_NUMBER = 19;
+    private boolean queryViaFlashbackArea_;
+    /**
+     * <pre>
+     * Flashback area
+     * </pre>
+     *
+     * <code>optional bool query_via_flashback_area = 19;</code>
+     * @return Whether the queryViaFlashbackArea field is set.
+     */
+    public boolean hasQueryViaFlashbackArea() {
+      return ((bitField0_ & 0x00010000) != 0);
+    }
+    /**
+     * <pre>
+     * Flashback area
+     * </pre>
+     *
+     * <code>optional bool query_via_flashback_area = 19;</code>
+     * @return The queryViaFlashbackArea.
+     */
+    public boolean getQueryViaFlashbackArea() {
+      return queryViaFlashbackArea_;
+    }
+
     private byte memoizedIsInitialized = -1;
     @java.lang.Override
     public final boolean isInitialized() {
@@ -1049,6 +1098,9 @@ public final class PolarxSql {
       if (((bitField0_ & 0x00008000) != 0)) {
         output.writeBool(18, markDistributed_);
       }
+      if (((bitField0_ & 0x00010000) != 0)) {
+        output.writeBool(19, queryViaFlashbackArea_);
+      }
       unknownFields.writeTo(output);
     }
 
@@ -1126,6 +1178,10 @@ public final class PolarxSql {
       if (((bitField0_ & 0x00008000) != 0)) {
         size += com.google.protobuf.CodedOutputStream
             .computeBoolSize(18, markDistributed_);
+      }
+      if (((bitField0_ & 0x00010000) != 0)) {
+        size += com.google.protobuf.CodedOutputStream
+            .computeBoolSize(19, queryViaFlashbackArea_);
       }
       size += unknownFields.getSerializedSize();
       memoizedSize = size;
@@ -1226,6 +1282,11 @@ public final class PolarxSql {
         if (getMarkDistributed()
             != other.getMarkDistributed()) return false;
       }
+      if (hasQueryViaFlashbackArea() != other.hasQueryViaFlashbackArea()) return false;
+      if (hasQueryViaFlashbackArea()) {
+        if (getQueryViaFlashbackArea()
+            != other.getQueryViaFlashbackArea()) return false;
+      }
       if (!unknownFields.equals(other.unknownFields)) return false;
       return true;
     }
@@ -1317,6 +1378,11 @@ public final class PolarxSql {
         hash = (37 * hash) + MARK_DISTRIBUTED_FIELD_NUMBER;
         hash = (53 * hash) + com.google.protobuf.Internal.hashBoolean(
             getMarkDistributed());
+      }
+      if (hasQueryViaFlashbackArea()) {
+        hash = (37 * hash) + QUERY_VIA_FLASHBACK_AREA_FIELD_NUMBER;
+        hash = (53 * hash) + com.google.protobuf.Internal.hashBoolean(
+            getQueryViaFlashbackArea());
       }
       hash = (29 * hash) + unknownFields.hashCode();
       memoizedHashCode = hash;
@@ -1514,6 +1580,8 @@ public final class PolarxSql {
         bitField0_ = (bitField0_ & ~0x00010000);
         markDistributed_ = false;
         bitField0_ = (bitField0_ & ~0x00020000);
+        queryViaFlashbackArea_ = false;
+        bitField0_ = (bitField0_ & ~0x00040000);
         return this;
       }
 
@@ -1623,6 +1691,10 @@ public final class PolarxSql {
         if (((from_bitField0_ & 0x00020000) != 0)) {
           result.markDistributed_ = markDistributed_;
           to_bitField0_ |= 0x00008000;
+        }
+        if (((from_bitField0_ & 0x00040000) != 0)) {
+          result.queryViaFlashbackArea_ = queryViaFlashbackArea_;
+          to_bitField0_ |= 0x00010000;
         }
         result.bitField0_ = to_bitField0_;
         onBuilt();
@@ -1778,6 +1850,9 @@ public final class PolarxSql {
         }
         if (other.hasMarkDistributed()) {
           setMarkDistributed(other.getMarkDistributed());
+        }
+        if (other.hasQueryViaFlashbackArea()) {
+          setQueryViaFlashbackArea(other.getQueryViaFlashbackArea());
         }
         this.mergeUnknownFields(other.unknownFields);
         onChanged();
@@ -3093,6 +3168,59 @@ public final class PolarxSql {
       public Builder clearMarkDistributed() {
         bitField0_ = (bitField0_ & ~0x00020000);
         markDistributed_ = false;
+        onChanged();
+        return this;
+      }
+
+      private boolean queryViaFlashbackArea_ ;
+      /**
+       * <pre>
+       * Flashback area
+       * </pre>
+       *
+       * <code>optional bool query_via_flashback_area = 19;</code>
+       * @return Whether the queryViaFlashbackArea field is set.
+       */
+      public boolean hasQueryViaFlashbackArea() {
+        return ((bitField0_ & 0x00040000) != 0);
+      }
+      /**
+       * <pre>
+       * Flashback area
+       * </pre>
+       *
+       * <code>optional bool query_via_flashback_area = 19;</code>
+       * @return The queryViaFlashbackArea.
+       */
+      public boolean getQueryViaFlashbackArea() {
+        return queryViaFlashbackArea_;
+      }
+      /**
+       * <pre>
+       * Flashback area
+       * </pre>
+       *
+       * <code>optional bool query_via_flashback_area = 19;</code>
+       * @param value The queryViaFlashbackArea to set.
+       * @return This builder for chaining.
+       */
+      public Builder setQueryViaFlashbackArea(boolean value) {
+        bitField0_ |= 0x00040000;
+        queryViaFlashbackArea_ = value;
+        onChanged();
+        return this;
+      }
+      /**
+       * <pre>
+       * Flashback area
+       * </pre>
+       *
+       * <code>optional bool query_via_flashback_area = 19;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearQueryViaFlashbackArea() {
+        bitField0_ = (bitField0_ & ~0x00040000);
+        queryViaFlashbackArea_ = false;
         onChanged();
         return this;
       }
@@ -8138,7 +8266,7 @@ public final class PolarxSql {
   static {
     java.lang.String[] descriptorData = {
         "\n\020polarx_sql.proto\022\nPolarx.Sql\032\026polarx_d" +
-            "atatypes.proto\"\323\003\n\013StmtExecute\022\026\n\tnamesp" +
+            "atatypes.proto\"\365\003\n\013StmtExecute\022\026\n\tnamesp" +
             "ace\030\003 \001(\t:\003sql\022\014\n\004stmt\030\001 \001(\014\022\023\n\013stmt_dig" +
             "est\030\014 \001(\014\022\014\n\004hint\030\r \001(\014\022\033\n\014chunk_result\030" +
             "\016 \001(\010:\005false\022\030\n\tfeed_back\030\020 \001(\010:\005false\022#" +
@@ -8150,25 +8278,26 @@ public final class PolarxSql {
             "\t \001(\010\022\024\n\014snapshot_seq\030\n \001(\004\022\022\n\ncommit_se" +
             "q\030\013 \001(\004\022\033\n\023use_cts_transaction\030\017 \001(\010\022\024\n\014" +
             "capabilities\030\021 \001(\004\022\030\n\020mark_distributed\030\022" +
-            " \001(\010\"R\n\026GalaxyPrepareTableData\022\023\n\013table_" +
-            "index\030\001 \002(\005\022\017\n\007db_name\030\002 \001(\014\022\022\n\ntable_na" +
-            "me\030\003 \002(\014\"\312\004\n\024GalaxyPrepareExecute\022\014\n\004stm" +
-            "t\030\001 \001(\014\022\023\n\013stmt_digest\030\002 \001(\014\022\014\n\004hint\030\003 \001" +
-            "(\014\0222\n\006tables\030\004 \003(\0132\".Polarx.Sql.GalaxyPr" +
-            "epareTableData\022\r\n\005param\030\005 \001(\014\022\021\n\tparam_n" +
-            "um\030\021 \001(\005\022\037\n\020compact_metadata\030\006 \001(\010:\005fals" +
-            "e\022\017\n\007db_name\030\007 \001(\t\022<\n\021session_variables\030" +
-            "\010 \003(\0132!.Polarx.Datatypes.SessionVariable" +
-            "\022\020\n\010encoding\030\t \001(\t\022\r\n\005token\030\n \001(\005\022\023\n\013res" +
-            "et_error\030\013 \001(\010\022\024\n\014snapshot_seq\030\014 \001(\004\022\022\n\n" +
-            "commit_seq\030\r \001(\004\022\033\n\023use_cts_transaction\030" +
-            "\016 \001(\010\022L\n\017result_set_type\030\017 \001(\0162..Polarx." +
-            "Sql.GalaxyPrepareExecute.ResultSetType:\003" +
-            "ROW\022\030\n\tfeed_back\030\020 \001(\010:\005false\022\024\n\014capabil" +
-            "ities\030\022 \001(\004\022\030\n\020mark_distributed\030\023 \001(\010\"&\n" +
-            "\rResultSetType\022\007\n\003ROW\020\001\022\014\n\010CHUNK_V1\020\002\"\017\n" +
-            "\rStmtExecuteOk\"\037\n\nTokenOffer\022\021\n\005token\030\001 " +
-            "\001(\005:\002-1B\036\n\034com.mysql.cj.polarx.protobuf"
+            " \001(\010\022 \n\030query_via_flashback_area\030\023 \001(\010\"R" +
+            "\n\026GalaxyPrepareTableData\022\023\n\013table_index\030" +
+            "\001 \002(\005\022\017\n\007db_name\030\002 \001(\014\022\022\n\ntable_name\030\003 \002" +
+            "(\014\"\312\004\n\024GalaxyPrepareExecute\022\014\n\004stmt\030\001 \001(" +
+            "\014\022\023\n\013stmt_digest\030\002 \001(\014\022\014\n\004hint\030\003 \001(\014\0222\n\006" +
+            "tables\030\004 \003(\0132\".Polarx.Sql.GalaxyPrepareT" +
+            "ableData\022\r\n\005param\030\005 \001(\014\022\021\n\tparam_num\030\021 \001" +
+            "(\005\022\037\n\020compact_metadata\030\006 \001(\010:\005false\022\017\n\007d" +
+            "b_name\030\007 \001(\t\022<\n\021session_variables\030\010 \003(\0132" +
+            "!.Polarx.Datatypes.SessionVariable\022\020\n\010en" +
+            "coding\030\t \001(\t\022\r\n\005token\030\n \001(\005\022\023\n\013reset_err" +
+            "or\030\013 \001(\010\022\024\n\014snapshot_seq\030\014 \001(\004\022\022\n\ncommit" +
+            "_seq\030\r \001(\004\022\033\n\023use_cts_transaction\030\016 \001(\010\022" +
+            "L\n\017result_set_type\030\017 \001(\0162..Polarx.Sql.Ga" +
+            "laxyPrepareExecute.ResultSetType:\003ROW\022\030\n" +
+            "\tfeed_back\030\020 \001(\010:\005false\022\024\n\014capabilities\030" +
+            "\022 \001(\004\022\030\n\020mark_distributed\030\023 \001(\010\"&\n\rResul" +
+            "tSetType\022\007\n\003ROW\020\001\022\014\n\010CHUNK_V1\020\002\"\017\n\rStmtE" +
+            "xecuteOk\"\037\n\nTokenOffer\022\021\n\005token\030\001 \001(\005:\002-" +
+            "1B\036\n\034com.mysql.cj.polarx.protobuf"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
         .internalBuildGeneratedFileFrom(descriptorData,
@@ -8180,7 +8309,7 @@ public final class PolarxSql {
     internal_static_Polarx_Sql_StmtExecute_fieldAccessorTable = new
         com.google.protobuf.GeneratedMessageV3.FieldAccessorTable(
         internal_static_Polarx_Sql_StmtExecute_descriptor,
-        new java.lang.String[] { "Namespace", "Stmt", "StmtDigest", "Hint", "ChunkResult", "FeedBack", "Args", "CompactMetadata", "SchemaName", "SessionVariables", "Encoding", "Token", "ResetError", "SnapshotSeq", "CommitSeq", "UseCtsTransaction", "Capabilities", "MarkDistributed", });
+        new java.lang.String[] { "Namespace", "Stmt", "StmtDigest", "Hint", "ChunkResult", "FeedBack", "Args", "CompactMetadata", "SchemaName", "SessionVariables", "Encoding", "Token", "ResetError", "SnapshotSeq", "CommitSeq", "UseCtsTransaction", "Capabilities", "MarkDistributed", "QueryViaFlashbackArea", });
     internal_static_Polarx_Sql_GalaxyPrepareTableData_descriptor =
         getDescriptor().getMessageTypes().get(1);
     internal_static_Polarx_Sql_GalaxyPrepareTableData_fieldAccessorTable = new

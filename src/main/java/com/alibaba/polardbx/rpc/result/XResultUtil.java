@@ -27,6 +27,7 @@ import com.alibaba.polardbx.common.datatype.UInt64Utils;
 import com.alibaba.polardbx.common.exception.TddlRuntimeException;
 import com.alibaba.polardbx.common.exception.code.ErrorCode;
 import com.alibaba.polardbx.common.utils.BigDecimalUtil;
+import com.alibaba.polardbx.common.utils.LongUtil;
 import com.alibaba.polardbx.common.utils.Pair;
 import com.alibaba.polardbx.common.utils.hash.ByteUtil;
 import com.alibaba.polardbx.common.utils.time.MySQLTimeConverter;
@@ -40,7 +41,6 @@ import com.alibaba.polardbx.common.utils.time.core.OriginalTimestamp;
 import com.alibaba.polardbx.common.utils.time.core.TimeStorage;
 import com.alibaba.polardbx.common.utils.time.parser.TimeParseStatus;
 import com.alibaba.polardbx.rpc.jdbc.CharsetMapping;
-import com.alibaba.polardbx.common.utils.LongUtil;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.CodedInputStream;
 import com.mysql.cj.polarx.protobuf.PolarxResultset;
@@ -92,6 +92,27 @@ public class XResultUtil {
     public static final int GTS_PROTOCOL_LEASE_EXPIRE = 2;
 
     public static long ZERO_TIMESTAMP_LONG_VAL = 0;
+
+    public static final int DECIMAL_MAX_SCALE = 30;
+    public static final int DECIMAL_NOT_SPECIFIED = DECIMAL_MAX_SCALE + 1;
+
+    private static String real2string(float f) {
+        // Should convert float 1.0 as '1' in order to be compatible with MySQL
+        // Reference: https://stackoverflow.com/a/14126736
+        if (f == (long) f) {
+            return Long.toString((long) f);
+        } else {
+            return Float.toString(f);
+        }
+    }
+
+    private static String real2string(double d) {
+        if (d == (long) d) {
+            return Long.toString((long) d);
+        } else {
+            return Double.toString(d);
+        }
+    }
 
     public static Pair<Object, byte[]> resultToObject(PolarxResultset.ColumnMetaData meta, ByteString data,
                                                       boolean legacy, TimeZone tz) throws Exception {
@@ -177,12 +198,20 @@ public class XResultUtil {
 
         case DOUBLE:
             obj = stream.readDouble();
-            bytes = obj.toString().getBytes();
+            if (DECIMAL_NOT_SPECIFIED == meta.getFractionalDigits()) {
+                bytes = real2string((double) obj).getBytes();
+            } else {
+                bytes = String.format(String.format("%%.%df", meta.getFractionalDigits()), obj).getBytes();
+            }
             break;
 
         case FLOAT:
             obj = stream.readFloat();
-            bytes = obj.toString().getBytes();
+            if (DECIMAL_NOT_SPECIFIED == meta.getFractionalDigits()) {
+                bytes = real2string((float) obj).getBytes();
+            } else {
+                bytes = String.format(String.format("%%.%df", meta.getFractionalDigits()), obj).getBytes();
+            }
             break;
 
         case BYTES:
@@ -490,10 +519,20 @@ public class XResultUtil {
         }
 
         case DOUBLE:
-            return Double.toString(stream.readDouble()).getBytes();
+            if (DECIMAL_NOT_SPECIFIED == meta.getFractionalDigits()) {
+                return real2string(stream.readDouble()).getBytes();
+            } else {
+                return String.format(String.format("%%.%df", meta.getFractionalDigits()), stream.readDouble())
+                    .getBytes();
+            }
 
         case FLOAT:
-            return Float.toString(stream.readFloat()).getBytes();
+            if (DECIMAL_NOT_SPECIFIED == meta.getFractionalDigits()) {
+                return real2string(stream.readFloat()).getBytes();
+            } else {
+                return String.format(String.format("%%.%df", meta.getFractionalDigits()), stream.readFloat())
+                    .getBytes();
+            }
 
         case BYTES:
             switch (meta.getContentType()) {
