@@ -102,7 +102,6 @@ public class XConnection implements AutoCloseable, Connection {
                     networkTimeoutNanos = timeoutNanos;
                 }
                 session.setAutoCommit(this, true);
-                session.refereshConnetionId(this); // only query once
             } finally {
                 networkTimeoutNanos = orgTimeout;
                 sessionLock.readLock().unlock();
@@ -469,24 +468,25 @@ public class XConnection implements AutoCloseable, Connection {
     }
 
     public XResult execUpdateReturning(String sql, byte[] hint, List<PolarxDatatypes.Any> args, String returning,
-                                       boolean backfill)
+                                       boolean backfill, boolean isReturningAll)
         throws SQLException {
         sessionLock.readLock().lock();
         try {
             check();
-            return session.execQuery(this, BytesSql.getBytesSql(sql), hint, args, false, null, returning, backfill);
+            return session.execQuery(this, BytesSql.getBytesSql(sql), hint, args, false, null, returning, backfill,
+                isReturningAll);
         } finally {
             sessionLock.readLock().unlock();
         }
     }
 
     public XResult execUpdateReturning(BytesSql sql, byte[] hint, List<PolarxDatatypes.Any> args, String returning,
-                                       boolean backfill)
+                                       boolean backfill, boolean isReturningAll)
         throws SQLException {
         sessionLock.readLock().lock();
         try {
             check();
-            return session.execQuery(this, sql, hint, args, false, null, returning, backfill);
+            return session.execQuery(this, sql, hint, args, false, null, returning, backfill, isReturningAll);
         } finally {
             sessionLock.readLock().unlock();
         }
@@ -576,7 +576,7 @@ public class XConnection implements AutoCloseable, Connection {
         sessionLock.readLock().lock();
         try {
             check();
-            return session.getConnectionId();
+            return session.getConnectionId(this);
         } finally {
             sessionLock.readLock().unlock();
         }

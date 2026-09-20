@@ -17,4 +17,3 @@ logs
 package-info.java
 polardbx-rpc/src/main/proto/com/
 target/
-.flattened-pom.xml

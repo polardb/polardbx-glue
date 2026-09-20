@@ -29,8 +29,6 @@ public class XLog {
     // Protocol log.
     public final static Logger XProtocolLogger = LoggerFactory.getLogger("XProtocol");
 
-    // Physical slow log.
-    public final static Logger XRequestLogger = LoggerFactory.getLogger("XRequest");
     // sql # dsName # cache # retrans # chunk? # startTime # responseTime # finishTime # fetchCount # tokenDoneCount # activeOfferTokenCount # traceid # sql/plan # sessionId # extra
     public final static MessageFormat XRequestFormat =
         new MessageFormat("{0}#{1}#{2}#{3}#{4}#{5}#{6}#{7}#{8}#{9}#{10}#{11}#{12}#{13}#{14}");
@@ -39,6 +37,6 @@ public class XLog {
     public static final Logger XLogLogger = LoggerFactory.getLogger("XLog");
 
     // Perf log to single log file.
-    public static final Logger XPerfLogger = LoggerFactory.getLogger("XPerf");
+    public static final Logger XPerfLogger = LoggerFactory.getLogger("XLog");
 
 }

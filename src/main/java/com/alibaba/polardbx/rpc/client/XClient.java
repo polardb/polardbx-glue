@@ -45,6 +45,7 @@ import com.mysql.cj.polarx.protobuf.PolarxNotice;
 import com.mysql.cj.polarx.protobuf.PolarxSession;
 import com.mysql.cj.x.protobuf.Polarx;
 
+import java.io.UnsupportedEncodingException;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -54,6 +55,7 @@ import java.util.Map;
 import java.util.TimeZone;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -95,11 +97,6 @@ public class XClient implements AutoCloseable {
     // For auth wait and message.
     private final AtomicReference<String> authMessage = new AtomicReference<>(null);
     private long authClientId = -1; // Return by auth.
-
-    // Session/global variables(key with lower case).
-    private volatile Map<String, Object> sessionVariablesL = null;
-    private volatile Map<String, Object> globalVariablesL = null;
-    private long lastVariablesNanos = 0;
 
     // Perf data.
     private final TcpPerfCollection perfCollection = new TcpPerfCollection();
@@ -342,7 +339,7 @@ public class XClient implements AutoCloseable {
         final Throwable t = fatalError.get();
         item.setFatalError(null == t ? null : t.getMessage());
         item.setAuthId(authClientId);
-        long lastVar = this.lastVariablesNanos;
+        long lastVar = pool.getLastVariablesNanos().get();
         if (0 == lastVar || createNanos - lastVar > 0) {
             lastVar = createNanos;
         }
@@ -365,6 +362,7 @@ public class XClient implements AutoCloseable {
     }
 
     private void scramble(long sessionId, ByteString challenge) throws Exception {
+        boolean useSHA2 = DynamicConfig.getInstance().getUseSha2PasswordForBackend();
         final String encoding = "UTF8";
         final byte[] userBytes = pool.getUsername() == null ? new byte[] {} : pool.getUsername().getBytes(encoding);
         final byte[] passwordBytes =
@@ -374,7 +372,24 @@ public class XClient implements AutoCloseable {
 
         byte[] hashedPassword = passwordBytes;
         if (pool.getPassword() != null && pool.getPassword().length() > 0) {
-            hashedPassword = SecurityUtil.scramble411(passwordBytes, challenge.toByteArray());
+            // use challenge last byte to identify if we should use sha2
+            // old dn's challenge only have 20byte salt
+            useSHA2 = useSHA2 ? (challenge.size() > 20 && challenge.byteAt(challenge.size() - 1) == '1') : useSHA2;
+            if (useSHA2) {
+                // extract challenge , rounds and salt
+                // 1{20 byte challenge}{3 byte roundsByte}${20 byte salt}
+                // rounds = roundsByte * 1000
+                byte[] challengeByte = challenge.substring(0, 20).toByteArray();
+                byte[] roundsByte = challenge.substring(20, 23).toByteArray();
+                int rounds = Integer.parseInt(new String(roundsByte, encoding)) * 1000;
+                byte[] saltByte = challenge.substring(24, challenge.size() - 1).toByteArray();
+                byte[] sha2AsPassword = SecurityUtil.scrambleSHA2(passwordBytes, saltByte, rounds);
+                // use sha2 result as password
+                hashedPassword = SecurityUtil.scramble411(sha2AsPassword, challengeByte);
+            } else {
+                hashedPassword =
+                    SecurityUtil.scramble411(passwordBytes, challenge.substring(0, 20).toByteArray());
+            }
             // protocol dictates *-prefixed hex string as hashed password
             hashedPassword = String.format("*%040x", new java.math.BigInteger(1, hashedPassword)).getBytes();
         }
@@ -560,67 +575,101 @@ public class XClient implements AutoCloseable {
         return done;
     }
 
-    private void authStart(long sessionId) {
+    private void authStart(long sessionId) throws UnsupportedEncodingException {
         final PolarxSession.AuthenticateStart.Builder builder = PolarxSession.AuthenticateStart.newBuilder();
         builder.setMechName("MYSQL41");
+        boolean useSHA2 = DynamicConfig.getInstance().getUseSha2PasswordForBackend();
+        if (useSHA2) {
+            // sha2_password needs username
+            final String encoding = "UTF8";
+            final byte[] userBytes = pool.getUsername() == null ? new byte[] {} : pool.getUsername().getBytes(encoding);
+            builder.setAuthData(ByteString.copyFrom(userBytes));
+        }
         final XPacket packet =
             new XPacket(sessionId, Polarx.ClientMessages.Type.SESS_AUTHENTICATE_START_VALUE, builder.build());
         send(packet, true);
     }
 
-    public void refreshVariables(AtomicLong sessionIdGenerator, long timeoutNanos) throws Exception {
-        if (sessionVariablesL != null && globalVariablesL != null && lastVariablesNanos != 0 &&
-            System.nanoTime() - lastVariablesNanos
+    public void refreshVariables(AtomicLong sessionIdGenerator, long timeoutNanos, boolean isClientInit)
+        throws Exception {
+        // update on shared client pool variables stores
+        if (pool.getGlobalVariablesL() != null && pool.getSessionVariablesL() != null) {
+            if (isClientInit) {
+                return; // just treated it as valid one
+            }
+            final long lastVariablesNanos = pool.getLastVariablesNanos().get();
+            if (lastVariablesNanos != 0 && System.nanoTime() - lastVariablesNanos
                 < XConnectionManager.getInstance().getSessionAgingNanos()) {
-            return;
-        }
-
-        // No matter success or not, refresh time first to prevent fail with timeout.
-        if (0 == lastVariablesNanos) {
-            lastVariablesNanos = System.nanoTime() - // Next will random among the life time.
-                ThreadLocalRandom.current().nextLong(XConnectionManager.getInstance().getSessionAgingNanos());
-        } else {
-            lastVariablesNanos = System.nanoTime(); // Fixed gap is ok.
-        }
-
-        Map<String, Object> variables = new HashMap<>();
-        try (XConnection connection = newXConnection(sessionIdGenerator,
-            XConnectionManager.getInstance().isEnableAutoCommitOptimize())) {
-            // Important: set timeout before init, because init will get conn_id with block mode
-            connection.setNetworkTimeoutNanos(timeoutNanos);
-            connection.init(timeoutNanos);
-            XResult result = connection.execQuery("show variables");
-            while (result.next() != null) {
-                String key = (String) XResultUtil.resultToObject(
-                    result.getMetaData().get(0), result.current().getRow().get(0), true,
-                    TimeZone.getDefault()).getKey(); // Ignore time zone.
-                Pair<Object, byte[]> val = XResultUtil.resultToObject(
-                    result.getMetaData().get(1), result.current().getRow().get(1), true,
-                    TimeZone.getDefault()); // Ignore time zone.
-                variables.put(key.toLowerCase(), val.getKey());
+                return;
             }
         }
-        sessionVariablesL = Collections.unmodifiableMap(variables);
 
-        // Get global variable.
-        variables = new HashMap<>();
-        try (XConnection connection = newXConnection(sessionIdGenerator,
-            XConnectionManager.getInstance().isEnableAutoCommitOptimize())) {
-            // Important: set timeout before init, because init will get conn_id with block mode
-            connection.setNetworkTimeoutNanos(timeoutNanos);
-            connection.init(timeoutNanos);
-            XResult result = connection.execQuery("show global variables");
-            while (result.next() != null) {
-                String key = (String) XResultUtil.resultToObject(
-                    result.getMetaData().get(0), result.current().getRow().get(0), true,
-                    TimeZone.getDefault()).getKey(); // Ignore time zone.
-                Pair<Object, byte[]> val = XResultUtil.resultToObject(
-                    result.getMetaData().get(1), result.current().getRow().get(1), true,
-                    TimeZone.getDefault()); // Ignore time zone.
-                variables.put(key.toLowerCase(), val.getKey());
+        // lock and update
+        final long startNanos = System.nanoTime();
+        final long endNanos;
+        synchronized (pool.getLastVariablesNanos()) {
+            // check again
+            final long lastVariablesNanos = pool.getLastVariablesNanos().get();
+            if (null == pool.getGlobalVariablesL() || pool.getSessionVariablesL() == null || 0 == lastVariablesNanos
+                || System.nanoTime() - lastVariablesNanos >= XConnectionManager.getInstance().getSessionAgingNanos()) {
+                // do update variables
+                try {
+                    Map<String, Object> variables = new HashMap<>();
+                    try (final XConnection connection = newXConnection(sessionIdGenerator,
+                        XConnectionManager.getInstance().isEnableAutoCommitOptimize())) {
+                        connection.setNetworkTimeoutNanos(timeoutNanos);
+                        connection.init(timeoutNanos);
+                        final XResult result = connection.execQuery("show variables");
+                        while (result.next() != null) {
+                            String key = (String) XResultUtil.resultToObject(
+                                result.getMetaData().get(0), result.current().getRow().get(0), true,
+                                TimeZone.getDefault()).getKey(); // Ignore time zone.
+                            Pair<Object, byte[]> val = XResultUtil.resultToObject(
+                                result.getMetaData().get(1), result.current().getRow().get(1), true,
+                                TimeZone.getDefault()); // Ignore time zone.
+                            variables.put(key.toLowerCase(), val.getKey());
+                        }
+                    }
+                    pool.setSessionVariablesL(Collections.unmodifiableMap(variables));
+
+                    // Get global variable.
+                    variables = new HashMap<>();
+                    try (final XConnection connection = newXConnection(sessionIdGenerator,
+                        XConnectionManager.getInstance().isEnableAutoCommitOptimize())) {
+                        connection.setNetworkTimeoutNanos(timeoutNanos);
+                        connection.init(timeoutNanos);
+                        final XResult result = connection.execQuery("show global variables");
+                        while (result.next() != null) {
+                            String key = (String) XResultUtil.resultToObject(
+                                result.getMetaData().get(0), result.current().getRow().get(0), true,
+                                TimeZone.getDefault()).getKey(); // Ignore time zone.
+                            Pair<Object, byte[]> val = XResultUtil.resultToObject(
+                                result.getMetaData().get(1), result.current().getRow().get(1), true,
+                                TimeZone.getDefault()); // Ignore time zone.
+                            variables.put(key.toLowerCase(), val.getKey());
+                        }
+                    }
+                    pool.setGlobalVariablesL(Collections.unmodifiableMap(variables));
+                } finally {
+                    // No matter success or not, refresh time first to prevent fail with timeout.
+                    endNanos = System.nanoTime();
+                    if (0 == lastVariablesNanos) {
+                        pool.getLastVariablesNanos().set(endNanos - // Next will random among the lifetime.
+                            ThreadLocalRandom.current()
+                                .nextLong(XConnectionManager.getInstance().getSessionAgingNanos()));
+                    } else {
+                        pool.getLastVariablesNanos().set(endNanos);
+                    }
+                }
+            } else {
+                endNanos = lastVariablesNanos;
             }
         }
-        globalVariablesL = Collections.unmodifiableMap(variables);
+
+        // record slow log
+        if (endNanos - startNanos > TimeUnit.MILLISECONDS.toNanos(100)) {
+            XLog.XLogLogger.warn("Slow refresh variables on " + this + " cost " + (endNanos - startNanos) + "ns");
+        }
     }
 
     public void initClient(AtomicLong sessionIdGenerator, long timeoutNanos) throws Exception {
@@ -645,11 +694,12 @@ public class XClient implements AutoCloseable {
 
         // Init session variables.
         state = ClientState.LoadVariables;
-        refreshVariables(sessionIdGenerator, timeoutNanos);
+        refreshVariables(sessionIdGenerator, timeoutNanos, true);
         state = ClientState.Ready;
 
         // show info to event log
         final boolean xrpc;
+        final Map<String, Object> globalVariablesL = pool.getGlobalVariablesL();
         if (globalVariablesL != null) {
             final Object val = globalVariablesL.get("new_rpc");
             xrpc = val instanceof String && ((String) val).equalsIgnoreCase("ON");
@@ -667,12 +717,12 @@ public class XClient implements AutoCloseable {
 
     // Global variables(key with lower case).
     public Map<String, Object> getGlobalVariablesL() {
-        return globalVariablesL;
+        return pool.getGlobalVariablesL();
     }
 
     // Session variables(key with lower case).
     public Map<String, Object> getSessionVariablesL() {
-        return sessionVariablesL;
+        return pool.getSessionVariablesL();
     }
 
     public enum DnBaseVersion {
@@ -687,7 +737,7 @@ public class XClient implements AutoCloseable {
     private String minorVersion = null;
 
     public void decodeVersion() {
-        final String version = (String) globalVariablesL.get("version");
+        final String version = (String) pool.getGlobalVariablesL().get("version");
         final String xdbMark = "X-Cluster";
         // online: 5.7.38-X-Cluster-1.6.1.5-20240403-log or 5.7.14-AliSQL-X-Cluster-1.6.0.8-20210719-log
         // local: 5.7.38-X-Cluster-1.6.1.5-log or 5.7.14-AliSQL-X-Cluster-1.6.0.8-log
@@ -769,7 +819,8 @@ public class XClient implements AutoCloseable {
     }
 
     public boolean isActive() {
-        return null == getFatalError() && connected.get() && sessionVariablesL != null && globalVariablesL != null;
+        return null == getFatalError() && connected.get() && state == ClientState.Ready
+            && pool.getGlobalVariablesL() != null && pool.getSessionVariablesL() != null;
     }
 
     public boolean isBad() {
@@ -778,7 +829,8 @@ public class XClient implements AutoCloseable {
 
     public boolean needProb() {
         final boolean b = connected.get() // TCP connected.
-            && sessionVariablesL != null && globalVariablesL != null // Init completed.
+            // Init completed.
+            && state == ClientState.Ready && pool.getGlobalVariablesL() != null && pool.getSessionVariablesL() != null
             && nioClient.idleTime() > XConfig.DEFAULT_PROBE_IDLE_NANOS;
         if (!b) {
             // reset fail times.

@@ -26,6 +26,7 @@ import com.alibaba.polardbx.common.datatype.RawBytesDecimalUtils;
 import com.alibaba.polardbx.common.datatype.UInt64Utils;
 import com.alibaba.polardbx.common.exception.TddlRuntimeException;
 import com.alibaba.polardbx.common.exception.code.ErrorCode;
+import com.alibaba.polardbx.common.properties.DynamicConfig;
 import com.alibaba.polardbx.common.utils.BigDecimalUtil;
 import com.alibaba.polardbx.common.utils.LongUtil;
 import com.alibaba.polardbx.common.utils.Pair;
@@ -116,6 +117,12 @@ public class XResultUtil {
 
     public static Pair<Object, byte[]> resultToObject(PolarxResultset.ColumnMetaData meta, ByteString data,
                                                       boolean legacy, TimeZone tz) throws Exception {
+        return resultToObject(meta, data, legacy, tz, null);
+    }
+
+    public static Pair<Object, byte[]> resultToObject(PolarxResultset.ColumnMetaData meta, ByteString data,
+                                                      boolean legacy, TimeZone tz, String sourceCharset)
+        throws Exception {
         final byte[] rawBytes = data.toByteArray();
 
         if (0 == rawBytes.length) {
@@ -223,7 +230,12 @@ public class XResultUtil {
 
             case CONTENT_TYPE_BYTES_JSON:
             case CONTENT_TYPE_BYTES_XML:
-                if (null == encoding || isBinary) {
+                if (useJsonSourceCharset(meta, sourceCharset)) {
+                    final String jsonSourceCharset =
+                        "binary".equalsIgnoreCase(sourceCharset) ? "utf8mb4" : sourceCharset;
+                    obj = new String(rawBytes, 0, rawBytes.length - 1,
+                        CharsetMapping.getJavaEncodingForMysqlCharset(jsonSourceCharset));
+                } else if (null == encoding || isBinary) {
                     obj = new String(rawBytes, 0, rawBytes.length - 1);
                 } else {
                     obj = new String(rawBytes, 0, rawBytes.length - 1, encoding);
@@ -459,7 +471,7 @@ public class XResultUtil {
             unscaledString.clear(); // reset position
             BigInteger unscaled = new BigInteger(unscaledString.subSequence(0, characters).toString());
             obj = new BigDecimal(unscaled, scale);
-            bytes = obj.toString().getBytes();
+            bytes = ((BigDecimal) obj).toPlainString().getBytes();
         }
         break;
 
@@ -480,6 +492,11 @@ public class XResultUtil {
 
     public static byte[] resultToBytes(PolarxResultset.ColumnMetaData meta, ByteString data, String targetCharset)
         throws Exception {
+        return resultToBytes(meta, data, null, targetCharset);
+    }
+
+    public static byte[] resultToBytes(PolarxResultset.ColumnMetaData meta, ByteString data, String sourceCharset,
+                                       String targetCharset) throws Exception {
         if (0 == data.size()) {
             return null;
         }
@@ -542,6 +559,21 @@ public class XResultUtil {
             case CONTENT_TYPE_BYTES_JSON:
             case CONTENT_TYPE_BYTES_XML:
             default:
+                if (useJsonSourceCharset(meta, sourceCharset)) {
+                    final byte[] jsonBytes = stream.readRawBytes(data.size() - 1);
+                    final String jsonSourceCharset =
+                        "binary".equalsIgnoreCase(sourceCharset) ? "utf8mb4" : sourceCharset;
+                    final String jsonEncoding = CharsetMapping.getJavaEncodingForMysqlCharset(jsonSourceCharset);
+                    final boolean jsonSourceIsUtf8 = isUtf8(jsonSourceCharset);
+                    if (targetCharset == null || "binary".equalsIgnoreCase(targetCharset)
+                        || (jsonSourceIsUtf8 && isUtf8(targetCharset))
+                        || jsonSourceCharset.equalsIgnoreCase(targetCharset)) {
+                        return jsonBytes;
+                    }
+                    return new String(jsonBytes, jsonEncoding)
+                        .getBytes(CharsetMapping.getJavaEncodingForMysqlCharset(targetCharset));
+                }
+
                 final String encoding;
                 final String mysqlCharset;
                 final boolean isUtf8;
@@ -783,6 +815,14 @@ public class XResultUtil {
             throw new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_RESULT,
                 "Unsupported type: " + meta.getType().name());
         }
+    }
+
+    private static boolean useJsonSourceCharset(PolarxResultset.ColumnMetaData meta, String sourceCharset) {
+        return DynamicConfig.getInstance().isEnableJsonResultCharsetCompatibility()
+            && sourceCharset != null && !sourceCharset.isEmpty()
+            && meta.hasCollation() && meta.getCollation() == 63
+            && meta.getType() == PolarxResultset.ColumnMetaData.FieldType.BYTES
+            && meta.getContentType() == CONTENT_TYPE_BYTES_JSON;
     }
 
     public static void resultToColumnVector(PolarxResultset.ColumnMetaData meta, ByteString data, String targetCharset,

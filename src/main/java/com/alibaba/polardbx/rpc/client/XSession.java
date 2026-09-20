@@ -50,6 +50,7 @@ import com.mysql.cj.polarx.protobuf.PolarxSql;
 import com.mysql.cj.x.protobuf.Polarx;
 import com.mysql.cj.x.protobuf.PolarxDatatypes;
 import com.mysql.cj.x.protobuf.PolarxExecPlan;
+import lombok.SneakyThrows;
 import org.apache.commons.lang.StringUtils;
 
 import java.nio.charset.UnsupportedCharsetException;
@@ -65,6 +66,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TimeZone;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -78,6 +80,10 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
 
     public static final AtomicInteger GLOBAL_COUNTER = new AtomicInteger(0);
     public static final ByteString EXPLAIN_PRE = ByteString.copyFromUtf8("explain ");
+    //only supported for query in DN 8.X
+    public static final ByteString EXPLAIN_ANALYZE_PRE = ByteString.copyFromUtf8("explain analyze ");
+    public static final ByteString EXPLAIN_TREE_PRE = ByteString.copyFromUtf8("explain format=tree ");
+    public static final ByteString EXPLAIN_JSON_PRE = ByteString.copyFromUtf8("explain format=json ");
 
     private static final Exception CANCEL_EXCEPTION = new Exception("Query was canceled.");
     private static final Exception KILL_EXCEPTION = new Exception("Session was killed.");
@@ -249,6 +255,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                 needClose = (status != Status.Closed);
                 if (needClose) {
                     status = Status.Closed;
+                    statusLock.notifyAll();
                 }
             }
 
@@ -521,30 +528,18 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             return defaultEncodingMySQL;
         }
         if (null == characterSetClient) {
-            Map<String, Object> variables = null == sessionVariables ? client.getGlobalVariablesL() : sessionVariables;
-            if (null == variables) {
-                characterSetClient = "utf8";
-            } else {
-                characterSetClient = (String) variables.get("character_set_client");
-                if (null == characterSetClient) {
-                    characterSetClient = "utf8";
-                }
-            }
+            // Note: Charset will be reset to utf8 in DN Srv_session::open, so never use global value.
+            // Treat sessionVariables as unreliable.
+            characterSetClient = "utf8";
         }
         return characterSetClient;
     }
 
     public synchronized String getResultMetaEncodingMySQL() {
         if (null == characterSetResults) {
-            Map<String, Object> variables = null == sessionVariables ? client.getGlobalVariablesL() : sessionVariables;
-            if (null == variables) {
-                characterSetResults = "utf8";
-            } else {
-                characterSetResults = (String) variables.get("character_set_results");
-                if (null == characterSetResults) {
-                    characterSetResults = "utf8";
-                }
-            }
+            // Note: Charset will be reset to utf8 in DN Srv_session::open, so never use global value.
+            // Treat sessionVariables as unreliable.
+            characterSetResults = "utf8";
         }
         return characterSetResults;
     }
@@ -909,8 +904,8 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
         }
 
         // Reset cache.
-        characterSetClient = null;
-        characterSetResults = null;
+        characterSetClient = encoding;
+        characterSetResults = encoding;
     }
 
     // Invoke this after successfully set transaction isolation.
@@ -1081,6 +1076,14 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
     public void pushFatal(XPacket fatal) {
         packetQueue.put(fatal);
         dataNotify(false); // Never hold the lock(deadlock may occur) because this may invoke from other thread.
+        // Transition status like pushPackets() does for fatal errors,
+        // so getConnectionId() waiters can exit the while loop immediately.
+        synchronized (statusLock) {
+            if (Status.Waiting == status) {
+                status = Status.Ready;
+            }
+            statusLock.notifyAll();
+        }
     }
 
     public void kill(boolean pushKilled) {
@@ -1144,6 +1147,8 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                     if (Status.Waiting == status) {
                         if (Polarx.ServerMessages.Type.OK_VALUE == packets.get(0).getType()) {
                             ++consume;
+                            final Polarx.Ok packet = (Polarx.Ok) packets.get(0).getPacket();
+                            connectionId = packet.hasConnectionId() ? packet.getConnectionId() : -1;
                             nowStatus = status = Status.Ready;
                             // Collect perf data.
                             client.getPerfCollection().getSessionCreateSuccessCount().getAndIncrement();
@@ -1167,6 +1172,7 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
                                         + packets.get(0).getType() + " pkt: " + packets.get(0).getPacket());
                             }
                         }
+                        statusLock.notifyAll();
                     }
                 }
             }
@@ -1551,12 +1557,13 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
 
     public XResult execQuery(XConnection connection, BytesSql sql, byte[] hint, List<PolarxDatatypes.Any> args,
                              boolean ignoreResult, ByteString digest) throws SQLException {
-        return execQuery(connection, sql, hint, args, ignoreResult, digest, null, false);
+        return execQuery(connection, sql, hint, args, ignoreResult, digest, null, false, false);
     }
 
     public synchronized XResult execQuery(XConnection connection, BytesSql sql, byte[] hint,
                                           List<PolarxDatatypes.Any> args,
-                                          boolean ignoreResult, ByteString digest, String returning, boolean backfill)
+                                          boolean ignoreResult, ByteString digest, String returning, boolean backfill,
+                                          boolean isReturningAll)
         throws SQLException {
         if (returning != null && XConfig.GALAXY_X_PROTOCOL) {
             throw new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_SESSION, "Returning not supported in galaxy.");
@@ -1565,15 +1572,30 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
         execPreDealing(connection, sql, false);
 
         // handle explain
-        boolean explain = isExplain(hint);
-        if (explain) {
-            hint = Arrays.copyOfRange(hint, 8, hint.length);
+        boolean explain = false;
+        boolean explainAnalyze = false;
+        boolean explainJson = false;
+        boolean explainTree = false;
+        if (isExplain(hint)) {
+            if (isExplainAnalyze(hint)) {
+                explainAnalyze = true;
+                hint = Arrays.copyOfRange(hint, 16, hint.length);
+            } else if (isExplainJson(hint)) {
+                explainJson = true;
+                hint = Arrays.copyOfRange(hint, 20, hint.length);
+            } else if (isExplainTree(hint)) {
+                explainTree = true;
+                hint = Arrays.copyOfRange(hint, 20, hint.length);
+            } else {
+                explain = true;
+                hint = Arrays.copyOfRange(hint, 8, hint.length);
+            }
         }
 
         // Send request.
         final PolarxSql.StmtExecute.Builder builder = PolarxSql.StmtExecute.newBuilder();
 
-        final String returningFunc = backfill ? "backfill" : "returning";
+        final String returningFunc = isReturningAll ? "returning_all" : backfill ? "backfill" : "returning";
         final String returningHint = null != returning ? "/* +" + returningFunc + " fields(" + returning + ") */ " : "";
         boolean setStmt = true;
         // Dealing cache.
@@ -1597,6 +1619,13 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
             try {
                 if (explain && !isExplain(sql.getBytes())) {
                     builder.setStmt(EXPLAIN_PRE.concat(sql.byteString(toJavaEncoding(getRequestEncodingMySQL()))));
+                } else if (explainAnalyze && !isExplainAnalyze(sql.getBytes())) {
+                    builder.setStmt(
+                        EXPLAIN_ANALYZE_PRE.concat(sql.byteString(toJavaEncoding(getRequestEncodingMySQL()))));
+                } else if (explainJson && !isExplainJson(sql.getBytes())) {
+                    builder.setStmt(EXPLAIN_JSON_PRE.concat(sql.byteString(toJavaEncoding(getRequestEncodingMySQL()))));
+                } else if (explainTree && !isExplainTree(sql.getBytes())) {
+                    builder.setStmt(EXPLAIN_TREE_PRE.concat(sql.byteString(toJavaEncoding(getRequestEncodingMySQL()))));
                 } else {
                     if ((builder.getStmtDigest() == null || builder.getStmtDigest().isEmpty()) && hint != null) {
                         // digest is null meaning it's the first interview for this sql
@@ -1677,12 +1706,42 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
         return ignoreResult ? null : result;
     }
 
-    private boolean isExplain(byte[] hint) {
+    public static boolean isExplain(byte[] hint) {
         if (hint == null || hint.length < 8) {
             return false;
         }
         return hint[0] == 101 && hint[1] == 120 && hint[2] == 112 && hint[3] == 108 && hint[4] == 97 && hint[5] == 105
             && hint[6] == 110 && hint[7] == 32;
+    }
+
+    private boolean isExplainAnalyze(byte[] hint) {
+        if (hint == null || hint.length < 16) {
+            return false;
+        }
+        return hint[0] == 101 && hint[1] == 120 && hint[2] == 112 && hint[3] == 108 && hint[4] == 97 && hint[5] == 105
+            && hint[6] == 110 && hint[7] == 32
+            && hint[8] == 97 && hint[9] == 110 && hint[10] == 97 && hint[11] == 108 && hint[12] == 121
+            && hint[13] == 122 && hint[14] == 101 && hint[15] == 32;
+    }
+
+    private boolean isExplainJson(byte[] hint) {
+        if (hint == null || hint.length < 20) {
+            return false;
+        }
+        return hint[0] == 101 && hint[1] == 120 && hint[2] == 112 && hint[3] == 108 && hint[4] == 97 && hint[5] == 105
+            && hint[6] == 110 && hint[7] == 32 && hint[8] == 102 && hint[9] == 111 && hint[10] == 114 && hint[11] == 109
+            && hint[12] == 97 && hint[13] == 116 && hint[14] == 61 && hint[15] == 106 && hint[16] == 115
+            && hint[17] == 111 && hint[18] == 110 && hint[19] == 32;
+    }
+
+    private boolean isExplainTree(byte[] hint) {
+        if (hint == null || hint.length < 20) {
+            return false;
+        }
+        return hint[0] == 101 && hint[1] == 120 && hint[2] == 112 && hint[3] == 108 && hint[4] == 97 && hint[5] == 105
+            && hint[6] == 110 && hint[7] == 32 && hint[8] == 102 && hint[9] == 111 && hint[10] == 114 && hint[11] == 109
+            && hint[12] == 97 && hint[13] == 116 && hint[14] == 61 && hint[15] == 116 && hint[16] == 114
+            && hint[17] == 101 && hint[18] == 101 && hint[19] == 32;
     }
 
     public synchronized XResult execGalaxyPrepare(
@@ -2141,11 +2200,31 @@ public class XSession implements Comparable<XSession>, AutoCloseable {
 
     private volatile long connectionId = -1;
 
-    public long getConnectionId() {
+    @SneakyThrows
+    public long getConnectionId(XConnection connection) {
+        initForRequest();
+        if (Status.Waiting == status) {
+            flushNetwork();
+            synchronized (statusLock) {
+                final long startNanos = System.nanoTime();
+                final long timeoutNanos = connection.actualTimeoutNanos();
+                while (Status.Waiting == status) {
+                    final long nowNanos = System.nanoTime();
+                    if (nowNanos - startNanos >= timeoutNanos) {
+                        throw new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_SESSION,
+                            "Timeout to get connection id.");
+                    }
+                    final long millis = TimeUnit.NANOSECONDS.toMillis(startNanos + timeoutNanos - nowNanos);
+                    statusLock.wait(Math.max(1, millis));
+                }
+            }
+        }
+        // refresh for old DN with no connection id in OK packet.
+        refreshConnectionId(connection);
         return connectionId != -1 ? connectionId : 0;
     }
 
-    public void refereshConnetionId(XConnection connection) throws SQLException {
+    public void refreshConnectionId(XConnection connection) throws SQLException {
         // Try cached first.
         if (connectionId != -1 || status == Status.AutoCommit) {
             return;

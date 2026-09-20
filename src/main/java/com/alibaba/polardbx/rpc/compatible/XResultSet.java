@@ -297,7 +297,7 @@ public class XResultSet implements BufferResultSet {
         }
         try {
             Object obj = XResultUtil.resultToObject(meta.get(columnIndex - 1), data.get(columnIndex - 1), true,
-                result.getSession().getDefaultTimezone()).getKey();
+                result.getSession().getDefaultTimezone(), result.getSession().getResultMetaEncodingMySQL()).getKey();
             lastWasNull = null == obj;
             return obj;
         } catch (Exception e) {

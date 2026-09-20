@@ -446,11 +446,11 @@ public class XResult implements AutoCloseable {
         } catch (Throwable ignore) {
         }
 
-        if (XLog.XRequestLogger.isInfoEnabled()
+        if (XLog.XPerfLogger.isInfoEnabled()
             && finishNanos >= XConnectionManager.getInstance().getSlowThresholdNanos()) {
             try {
                 final XSession session = connection.getSession();
-                XLog.XRequestLogger.info(XLog.XRequestFormat.format(new Object[] {
+                XLog.XPerfLogger.info(XLog.XRequestFormat.format(new Object[] {
                         sql, connection.getDataSource().getName().replace('#', '$'), goCache ? "cache" : "normal",
                         goCache ? (retrans ? "miss" : "hit") : "N/A", resultChunk ? "chunk" : "row",
                         Long.toString(startMillis), Long.toString(responseNanos / 1000),
@@ -621,7 +621,7 @@ public class XResult implements AutoCloseable {
                 } else if (previousState != ResultStatus.XResultFinish && previousState != ResultStatus.XResultError) {
                     logger.error(
                         "Prev unfinished: " + previous.sql + " status: " + previousState.name() + " now: " + sql
-                            + " status: " + status.name());
+                            + " status: " + status.name(), e);
                     if (previous.timeoutOccurs) {
                         timeoutOccurs = true; // cascade error
                     }
@@ -648,7 +648,7 @@ public class XResult implements AutoCloseable {
             if (ResultStatus.XResultError == status ||
                 ResultStatus.XResultFatal == status) {
                 throw new TddlRuntimeException(ErrorCode.ERR_X_PROTOCOL_SESSION,
-                    "Fetch next on a XResult with error or fatal state.");
+                    "Fetch next on a XResult with error or fatal state. ");
             } else if (ResultStatus.XResultFinish == status) {
                 return null;
             }

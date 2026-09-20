@@ -36,10 +36,13 @@ import com.alibaba.polardbx.rpc.perf.TcpPerfItem;
 import com.alibaba.polardbx.rpc.result.XResult;
 import com.google.common.collect.ImmutableList;
 import com.mysql.cj.x.protobuf.Polarx;
+import lombok.Getter;
+import lombok.Setter;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -87,6 +90,17 @@ public class XClientPool {
     // mark of change in process
     private final AtomicLong changingLeaderStartTime = new AtomicLong(0);
     private final AtomicLong lastNoticeNanos = new AtomicLong(0);
+    private volatile boolean changingLeaderReload = false;
+
+    // Shared session/global variables(key with lower case).
+    @Getter
+    @Setter
+    private volatile Map<String, Object> sessionVariablesL = null;
+    @Getter
+    @Setter
+    private volatile Map<String, Object> globalVariablesL = null;
+    @Getter
+    private final AtomicLong lastVariablesNanos = new AtomicLong(0); // also as lock
 
     public XClientPool(XConnectionManager manager, String host, int port, String username, String password) {
         this.manager = manager;
@@ -216,6 +230,9 @@ public class XClientPool {
     public void markChangingLeader() {
         final boolean before = isChangingLeader();
         changingLeaderStartTime.set(System.currentTimeMillis());
+        if (!before && DynamicConfig.getInstance().isEnableSmoothSwitchover()) {
+            changingLeaderReload = false;
+        }
         if (!before && DynamicConfig.getInstance().isEnableSmoothSwitchover() && DynamicConfig.getInstance()
             .isReleaseDirtyReadConnectionWhenSwitchover()) {
             // record event log
@@ -252,6 +269,20 @@ public class XClientPool {
                 // recheck
             } else {
                 return true;
+            }
+        }
+    }
+
+    public void reloadForLeaderChange() {
+        if (!isChangingLeader()) {
+            return;
+        }
+        if (!changingLeaderReload) {
+            synchronized (this) {
+                if (!changingLeaderReload) {
+                    reload();
+                    changingLeaderReload = true;
+                }
             }
         }
     }
@@ -617,6 +648,12 @@ public class XClientPool {
                 // Record time.
                 newConnection.setWaitNano(connectStartNanos - startNanos);
                 newConnection.setConnectNano(System.nanoTime() - connectStartNanos);
+                // record slow connect
+                if (newConnection.getWaitNano() + newConnection.getConnectNano() > TimeUnit.MILLISECONDS.toNanos(100)) {
+                    XLog.XLogLogger.info(
+                        "Slow connect " + newConnection + " wait " + newConnection.getWaitNano() + "ns, connect "
+                            + newConnection.getConnectNano() + "ns");
+                }
                 return newConnection;
             } catch (Throwable e) {
                 XLog.XLogLogger.error(e);
@@ -721,7 +758,7 @@ public class XClientPool {
                     // Good client.
                     try {
                         client.shrinkBuffer(); // Auto shrink big read buffer after twice invoke(at most 20s).
-                        client.refreshVariables(manager.getIdGenerator(), XConfig.DEFAULT_PROBE_TIMEOUT_NANOS);
+                        client.refreshVariables(manager.getIdGenerator(), XConfig.DEFAULT_PROBE_TIMEOUT_NANOS, false);
                     } catch (Exception e) {
                         XLog.XLogLogger.error("Error when refresh variables on " + client + ".");
                         XLog.XLogLogger.error(e); // Just log and ignore.

@@ -1487,6 +1487,17 @@ public final class Polarx {
      */
     com.google.protobuf.ByteString
         getMsgBytes();
+
+    /**
+     * <code>optional uint32 connection_id = 2;</code>
+     * @return Whether the connectionId field is set.
+     */
+    boolean hasConnectionId();
+    /**
+     * <code>optional uint32 connection_id = 2;</code>
+     * @return The connectionId.
+     */
+    int getConnectionId();
   }
   /**
    * <pre>
@@ -1543,6 +1554,11 @@ public final class Polarx {
               com.google.protobuf.ByteString bs = input.readBytes();
               bitField0_ |= 0x00000001;
               msg_ = bs;
+              break;
+            }
+            case 16: {
+              bitField0_ |= 0x00000002;
+              connectionId_ = input.readUInt32();
               break;
             }
             default: {
@@ -1623,6 +1639,23 @@ public final class Polarx {
       }
     }
 
+    public static final int CONNECTION_ID_FIELD_NUMBER = 2;
+    private int connectionId_;
+    /**
+     * <code>optional uint32 connection_id = 2;</code>
+     * @return Whether the connectionId field is set.
+     */
+    public boolean hasConnectionId() {
+      return ((bitField0_ & 0x00000002) != 0);
+    }
+    /**
+     * <code>optional uint32 connection_id = 2;</code>
+     * @return The connectionId.
+     */
+    public int getConnectionId() {
+      return connectionId_;
+    }
+
     private byte memoizedIsInitialized = -1;
     @java.lang.Override
     public final boolean isInitialized() {
@@ -1640,6 +1673,9 @@ public final class Polarx {
       if (((bitField0_ & 0x00000001) != 0)) {
         com.google.protobuf.GeneratedMessageV3.writeString(output, 1, msg_);
       }
+      if (((bitField0_ & 0x00000002) != 0)) {
+        output.writeUInt32(2, connectionId_);
+      }
       unknownFields.writeTo(output);
     }
 
@@ -1651,6 +1687,10 @@ public final class Polarx {
       size = 0;
       if (((bitField0_ & 0x00000001) != 0)) {
         size += com.google.protobuf.GeneratedMessageV3.computeStringSize(1, msg_);
+      }
+      if (((bitField0_ & 0x00000002) != 0)) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeUInt32Size(2, connectionId_);
       }
       size += unknownFields.getSerializedSize();
       memoizedSize = size;
@@ -1672,6 +1712,11 @@ public final class Polarx {
         if (!getMsg()
             .equals(other.getMsg())) return false;
       }
+      if (hasConnectionId() != other.hasConnectionId()) return false;
+      if (hasConnectionId()) {
+        if (getConnectionId()
+            != other.getConnectionId()) return false;
+      }
       if (!unknownFields.equals(other.unknownFields)) return false;
       return true;
     }
@@ -1686,6 +1731,10 @@ public final class Polarx {
       if (hasMsg()) {
         hash = (37 * hash) + MSG_FIELD_NUMBER;
         hash = (53 * hash) + getMsg().hashCode();
+      }
+      if (hasConnectionId()) {
+        hash = (37 * hash) + CONNECTION_ID_FIELD_NUMBER;
+        hash = (53 * hash) + getConnectionId();
       }
       hash = (29 * hash) + unknownFields.hashCode();
       memoizedHashCode = hash;
@@ -1826,6 +1875,8 @@ public final class Polarx {
         super.clear();
         msg_ = "";
         bitField0_ = (bitField0_ & ~0x00000001);
+        connectionId_ = 0;
+        bitField0_ = (bitField0_ & ~0x00000002);
         return this;
       }
 
@@ -1858,6 +1909,10 @@ public final class Polarx {
           to_bitField0_ |= 0x00000001;
         }
         result.msg_ = msg_;
+        if (((from_bitField0_ & 0x00000002) != 0)) {
+          result.connectionId_ = connectionId_;
+          to_bitField0_ |= 0x00000002;
+        }
         result.bitField0_ = to_bitField0_;
         onBuilt();
         return result;
@@ -1911,6 +1966,9 @@ public final class Polarx {
           bitField0_ |= 0x00000001;
           msg_ = other.msg_;
           onChanged();
+        }
+        if (other.hasConnectionId()) {
+          setConnectionId(other.getConnectionId());
         }
         this.mergeUnknownFields(other.unknownFields);
         onChanged();
@@ -2022,6 +2080,43 @@ public final class Polarx {
   }
   bitField0_ |= 0x00000001;
         msg_ = value;
+        onChanged();
+        return this;
+      }
+
+      private int connectionId_ ;
+      /**
+       * <code>optional uint32 connection_id = 2;</code>
+       * @return Whether the connectionId field is set.
+       */
+      public boolean hasConnectionId() {
+        return ((bitField0_ & 0x00000002) != 0);
+      }
+      /**
+       * <code>optional uint32 connection_id = 2;</code>
+       * @return The connectionId.
+       */
+      public int getConnectionId() {
+        return connectionId_;
+      }
+      /**
+       * <code>optional uint32 connection_id = 2;</code>
+       * @param value The connectionId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setConnectionId(int value) {
+        bitField0_ |= 0x00000002;
+        connectionId_ = value;
+        onChanged();
+        return this;
+      }
+      /**
+       * <code>optional uint32 connection_id = 2;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearConnectionId() {
+        bitField0_ = (bitField0_ & ~0x00000002);
+        connectionId_ = 0;
         onChanged();
         return this;
       }
@@ -3263,12 +3358,12 @@ public final class Polarx {
       "N_DONE\020\023\022\021\n\rRESULTSET_TSO\020\024\022\023\n\017RESULTSET" +
       "_CHUNK\020\025\022\036\n\032RESULTSET_GET_FILE_INFO_OK\020\026" +
       "\022#\n\037RESULTSET_TRANSFER_FILE_DATA_OK\020\027\022\034\n" +
-      "\030RESULTSET_FILE_MANAGE_OK\020\030\"\021\n\002Ok\022\013\n\003msg" +
-      "\030\001 \001(\t\"\210\001\n\005Error\022/\n\010severity\030\001 \001(\0162\026.Pol" +
-      "arx.Error.Severity:\005ERROR\022\014\n\004code\030\002 \002(\r\022" +
-      "\021\n\tsql_state\030\004 \002(\t\022\013\n\003msg\030\003 \002(\t\" \n\010Sever" +
-      "ity\022\t\n\005ERROR\020\000\022\t\n\005FATAL\020\001B\031\n\027com.mysql.c" +
-      "j.x.protobuf"
+      "\030RESULTSET_FILE_MANAGE_OK\020\030\"(\n\002Ok\022\013\n\003msg" +
+      "\030\001 \001(\t\022\025\n\rconnection_id\030\002 \001(\r\"\210\001\n\005Error\022" +
+      "/\n\010severity\030\001 \001(\0162\026.Polarx.Error.Severit" +
+      "y:\005ERROR\022\014\n\004code\030\002 \002(\r\022\021\n\tsql_state\030\004 \002(" +
+      "\t\022\013\n\003msg\030\003 \002(\t\" \n\010Severity\022\t\n\005ERROR\020\000\022\t\n" +
+      "\005FATAL\020\001B\031\n\027com.mysql.cj.x.protobuf"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
@@ -3291,7 +3386,7 @@ public final class Polarx {
     internal_static_Polarx_Ok_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessageV3.FieldAccessorTable(
         internal_static_Polarx_Ok_descriptor,
-        new java.lang.String[] { "Msg", });
+        new java.lang.String[] { "Msg", "ConnectionId", });
     internal_static_Polarx_Error_descriptor =
       getDescriptor().getMessageTypes().get(3);
     internal_static_Polarx_Error_fieldAccessorTable = new
